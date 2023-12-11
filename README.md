@@ -7,7 +7,7 @@
 
 The innovative [ZKLogin by Sui](https://sui.io/zklogin) utilizes ZK-SNARKS technology to provide secure OAuth2-based access to Sui accounts through OpenIDConnect service providers like Google. It uniquely confines spending key material within the browser client and ensures JWTs remain off-chain, significantly enhancing security.
 
-This proposal aims to make ZKLogin usable on [Algorand](https://developer.algorand.org/docs) blockchain. We plan to achieve this while preserving its core functionalities, utilizing the [Wormhole bridge](https://docs.wormhole.com/wormhole/quick-start/cross-chain-dev). Our approach is designed to be flexible, enabling adaptation to various blockchains and ZK service providers needing integration with an additional blockchain.
+This proposal aims to make ZKLogin usable on [Algorand](https://developer.algorand.org/docs) blockchain. I plan to achieve this while preserving its core functionalities, utilizing the [Wormhole bridge](https://docs.wormhole.com/wormhole/quick-start/cross-chain-dev). Our approach is designed to be flexible, enabling adaptation to various blockchains and ZK service providers needing integration with an additional blockchain.
 
 ## Introductory Video
 <p align="center">
