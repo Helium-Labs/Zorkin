@@ -140,6 +140,7 @@ def ConferLogin(suiAddr, epk):
 - Creating an MVP to prove the concept and test the method.
 - Deploying the MVP to production if proven to be a product-market fit without legal or technical issues.
 - Constructing a custom ZK-SNARK OAuth2 proving system that is native to Algorand and seeks to improve on the work of Sui, removing the need for the Wormhole bridge.
+- Inclusion in a larger product that solves low-friction auth on Algorand and beyond.
 
 ## Contribution Statement
 
