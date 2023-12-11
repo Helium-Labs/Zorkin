@@ -1,6 +1,6 @@
 # Zorkin: Using ZKLogin by Sui on Algorand through Bridging
 
-**NOTE: I am currently engaged in developing this into an MVP and potentially into production as quickly as possible. I may patent this technique if it turns out to be patentable.**
+**Note: I am currently engaged in developing this into an MVP and potentially into production as quickly as possible. I may patent this technique if it turns out to be patentable.**
 
 <p align="center">
   <img src="./Logo.png" alt="Logo" height="200">
