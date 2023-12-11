@@ -152,7 +152,7 @@ def ConferLogin(suiAddr, epk):
 
 ## Contribution Statement
 
-The system design and proposal, a novel concept independently created by **Winton Nathan-Roberts from Sydney, Australia**, is to my knowledge original. All rights reserved.
+The system design and proposal, a novel concept independently created by **Winton Nathan-Roberts from Sydney, Australia**, is to my knowledge original. Thanks to the Algorand community for their general support! All rights reserved.
 
 ## Disclaimer
 
