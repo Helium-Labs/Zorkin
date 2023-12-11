@@ -156,4 +156,4 @@ The system design and proposal, a novel concept independently created by **Winto
 
 ## Disclaimer
 
-This conceptual service design and proposal, which may change and has no release guarantee, carries no warranties or liabilities as allowed by law. I aim to commercialize it and am developing an MVP towards this goal. This work is independent and is not necessarily affiliated with my other activities. I reserve the right to do anything with my work, including commercialisation in anyway. Copyright, All Rights Reserved. The name may change overtime.
+This conceptual service design and proposal, which may change and has no release guarantee, carries no warranties or liabilities as allowed by law. I aim to commercialize it and am developing an MVP towards this goal. This work is independent and is not necessarily affiliated with my other activities. I reserve the right to do anything with my work, including commercialisation in anyway. I may apply for funding to help me build the idea into production. Copyright, All Rights Reserved. The name may change overtime.
