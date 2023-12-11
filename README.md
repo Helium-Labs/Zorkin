@@ -142,6 +142,7 @@ def ConferLogin(suiAddr, epk):
 
 - Maintains the same guarantees that ZKLogin offers
 - The contract code can be optimized at a low level, such as restricting rekeying to authorized AuthReceiver actions. This is omitted for simplicity, maintaining focus on the higher-level method.
+- There is a trivial extension to enforce expiration on the ephemeral key, to prevent long ranged attacks. E.g. have the key expire after 8 hours of use.
 
 ## Future Work
 
