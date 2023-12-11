@@ -9,6 +9,14 @@ The innovative [ZKLogin by Sui](https://sui.io/zklogin) utilizes ZK-SNARKS techn
 
 This proposal aims to make ZKLogin usable on [Algorand](https://developer.algorand.org/docs) blockchain. We plan to achieve this while preserving its core functionalities, utilizing the [Wormhole bridge](https://docs.wormhole.com/wormhole/quick-start/cross-chain-dev). Our approach is designed to be flexible, enabling adaptation to various blockchains and ZK service providers needing integration with an additional blockchain.
 
+## Introductory Video
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=dfXH1JM-BDY">
+    <img src="https://img.youtube.com/vi/dfXH1JM-BDY/maxresdefault.jpg" alt="Watch the video" width="500"/>
+  </a>
+</p>
+
+
 ## Method
 
 This document outlines a method that incorporates three main components, with their respective pseudocode descriptions provided below for reference:
