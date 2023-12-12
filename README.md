@@ -1,6 +1,6 @@
 # Zorkin: ZK OAuth2 on Algorand & beyond
 
-**Disclosure for transparency: I am currently engaged in developing this into an MVP and potentially into production as quickly as possible. I reserve all IP rights where applicable.**
+**Disclosure for transparency: I am currently engaged in developing this into an MVP and potentially into production as quickly as possible.**
 
 <p align="center">
   <img src="./Logo.png" alt="Logo" height="200">
