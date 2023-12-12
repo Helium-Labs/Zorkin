@@ -8,7 +8,7 @@
 
 Zorkin is a collection of methods for how we can get ZK OAuth2 in general working on Algorand. It documents several designs, which are being considered for development. There are multiple ways it can be done. Each major section represents one way.
 
-# Bridging ZKLogin by with Wormhole
+# Bridging ZKLogin by Sui with Wormhole
 
 The innovative [ZKLogin by Sui](https://sui.io/zklogin) utilizes ZK-SNARKS technology to provide secure OAuth2-based access to Sui accounts through OpenIDConnect service providers like Google. It uniquely confines spending key material within the browser client and ensures JWTs remain off-chain, significantly enhancing security.
 
