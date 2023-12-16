@@ -6,160 +6,174 @@
   <img src="./Logo.png" alt="Logo" height="200">
 </p>
 
-Zorkin is a collection of methods for how we can get ZK OAuth2 in general working on Algorand. It documents several designs, which are being considered for development. There are multiple ways it can be done. Each major section represents one way.
+Zorkin is trying to solve low-friction authentication to access blockchain accounts, focusing on Algorand, in a way that minimizes dependencies on external 3rd parties. It is beginning the endeavour with initial focus on using OAuth2 as an access point, maintaining privacy through ZK-SNARKs. Each major section proposes a solution for a feature or service that moves Zorkin closer to that goal. Zorkin will likely evolve over time, including its goals and naming. There are no warranties, and there is a chance it will never see use by the public if it proves to be technically or economically infeasible. For now, it is expressed in terms of a proposal and in most cases a corresponding MVP demo. Features explained aren't necessarily implemented yet, and some of them may be conceptual and forwards looking but with no guarantee of realisation. Zorkin is not affiliated in anyway with any other 3rd party entity like Sui.
 
-# Bridging ZKLogin by Sui with Wormhole
+# Native ZK-SNARK OAuth2 with ZKEmail Account Recovery
 
-The innovative [ZKLogin by Sui](https://sui.io/zklogin) utilizes ZK-SNARKS technology to provide secure OAuth2-based access to Sui accounts through OpenIDConnect service providers like Google. It uniquely confines spending key material within the browser client and ensures JWTs remain off-chain, significantly enhancing security.
-
-This proposal aims to make ZKLogin usable on [Algorand](https://developer.algorand.org/docs) blockchain. I plan to achieve this while preserving its core functionalities, utilizing the [Wormhole bridge](https://docs.wormhole.com/wormhole/quick-start/cross-chain-dev). Our approach is designed to be flexible, enabling adaptation to various blockchains and service providers needing integration with an additional blockchain.
-
-## Introductory Video
-<p align="center">
-  <a href="https://www.youtube.com/watch?v=dfXH1JM-BDY">
-    <img src="https://img.youtube.com/vi/dfXH1JM-BDY/maxresdefault.jpg" alt="Watch the video" width="500"/>
-  </a>
-</p>
+Access to a blockchain account can be granted through an account accessed via OpenID Connect, enabling users to log in to a decentralized application (dApp) using their preferred big-tech OAuth2 provider, such as Google or Facebook. By utilizing Zero-Knowledge Succinct Non-Interactive Argument of Knowledge (ZK-SNARKs) and well-designed smart contracts, as detailed below, it is possible to maintain the security of the sensitive JSON Web Token (JWT) off-chain. This process allows for the issuance of an ephemeral key with which funds can be transacted, ensuring that the sensitive private key never leaves the client's browser. Additionally, should users lose access to their account, they can recover it while preserving decentralization through ZK-Email. This service verifies information about an email account without exposing private data. The system's infrastructure eliminates the need for any third-party backend or database, with the exception of the optional prover, which can be outsourced to a third-party provider if desired.
 
 
 ## Method
 
-This document outlines a method that incorporates three main components, with their respective pseudocode descriptions provided below for reference:
+In the subsequent subsections, we will examine and clarify four key aspects: authentication in common scenarios, the process of creating an initial account, how to sign a transaction once authenticated, and the procedure for account recovery.
 
-1. `AuthEmitter` application deployed on the [Sui blockchain](https://github.com/MystenLabs/sui).
-2. `AuthReceiver` application deployed on the [Algorand blockchain](https://www.algorand.com/).
-3. A [Logic Signature (LSIG) Contract Account](https://developer.algorand.org/docs/get-details/dapps/smart-contracts/smartsigs/modes/#contract-account) named `SuiAdapter` on Algorand, access to which is secured by `ZKLogin`. 
+### LSIG Account Components
 
-The `AuthEmitter` is responsible for initiating a message once a user is logged in. This message, containing both the user's Address and their ephemeral key, is propagated to the `AuthReceiver` on Algorand via the [Wormhole bridge](https://docs.wormhole.com/wormhole/quick-start/cross-chain-dev/specialized-relayer). A specialized relayer is used to capture this message and perform an application call to `AuthReceiver`. The call includes a transaction that rekeys the existing `SuiAdapter` to a new `SuiAdapter` account. This new account is controlled by the ephemeral key belonging to the session's logged-in user.
+These components are relevant to the following explanation, so they are being defined first for later reference.
 
-Rekeying the `SuiAdapter` ([Algorand’s rekeying feature](https://developer.algorand.org/docs/get-details/accounts/rekey/)) involves updating the LSIG account with the current session’s ephemeral key. When rekeyed, the `SuiAdapter` maintains its assets but now authorizes transactions using the new ephemeral key.
-
-The `AuthEmitter` also has the functionality to store the previously used ephemeral key using Box Storage. This stored key enables the reconstruction of the prior `SuiAdapter`, from which the new `SuiAdapter` is derived. To ensure security, the method enforces that a rekey operation can only occur if:
-
-- The `AuthEmitter` confirms the correctness of both the current and rekeyed `SuiAdapter` addresses.
-- The rekey transaction is part of a valid group transaction including the message from `AuthEmitter`.
-
-Note that group transactions on Algorand are atomic, meaning all transactions in the group must succeed together, or they all fail.
-
-Leveraging the static authorizing address of the derived `SuiAdapter`, we can identify the underlying account address with simple indexing. This address does not change between login sessions and is used to initiate transactions from the `SuiAdapter` using its 'from' field. Spending transactions from the address are signed with the current Sui Adapter where the ephemeral public key and signature of the transaction id using the ephemeral private key are provided. The SuiAdapter will approve the transaction if the ephemeral public key matches the bound template variable, and the signature is valid.
-
-![Architecture](./diagram.png)
-
-In the following subsections, we describe the method in greater detail with pseudocode. Please note the minute details are not significant to the overall method and are skimmed over for brevity.
-
-### Step 1: Initiate Login and Message Emission on Sui (ZKLogin to AuthEmitter)
-- **Login via ZKLogin**: The user logs in to their Sui account using ZKLogin. This action generates a unique, temporary ED25519 key pair (ephemeral public key (epk) and ephemeral secret key (esk)) for the session.
-- **Message Emission**: The AuthEmitter contract on Sui is invoked by the logged in Sui account. This contract sends a message through the Wormhole bridge to the AuthReceiver application on Algorand, if the transaction was initiated by the corresponding Sui account. This message, referred to as the Delegating VAA (DelgVAA), includes the Sui account address (suiAddr) and the ephemeral public key (epk).
-
-### Step 2: Message Relay and Rekeying on Algorand
-
-- **Message Relay**: A specialized Wormhole relayer forwards the DelgVAA message from Sui's AuthEmitter to Algorand's AuthReceiver. This message contains the Sui account address and the new ephemeral public key.
-
-- **Rekeying SuiAdapter**: The AuthReceiver on Algorand initiates a rekey transaction for the SuiAdapter LSIG account. This transaction updates the SuiAdapter with the new ephemeral key from the DelgVAA, changing the authorizing address while keeping the assets intact.
-
-- **Security and Validation**: The previous ephemeral key, stored in the AuthEmitter's Box Storage on Sui, is used to validate the rekey process. The rekeying must match the addresses in the DelgVAA and be part of a validated group transaction on Algorand to ensure security and integrity.
-
-### Step 3: Spending from the SuiAdapter
-
-- **Authorizing Address Sui Adapter Reproduced**: The Sui Adapter for the current session is reproduced by filling in the template variables with the current ephemeral public key, the Sui Account Address, and the AuthReceiver Application ID.
-- **Sui Adapter Address Reproduced**: Through use of the Indexer, the address of the underlying account holding the assets is reproduced since we have its Authorizing Address derived in the previous step. 
-- **Ephemeral Key signing to Spend from the Sui Adapter**: To execute a transaction through the Sui Adapter, it needs to be signed using the current Sui Adapter LSIG (authorizing address), that has the ephemeral public key and a signature of the transaction id (group id) as arguments. This method keeps the ephemeral private key secure and prevents unauthorized spending from the account.
-
-**Specialized Relayer**
+**JWT Proof Verifier (JWTVerifier) (LSIG)**
 ```python
-def GetRekeyGTXN(prevSuiAdapter, newSuiAdapter):
-  return [AuthReceiver.ReceiveLogin(DelgVAA), Rekey prevSuiAdapter to newSuiAdapter]
+VKey = "..." # Harcoded VKey parameters
+MPCRSAVerifierAppId = "..." # Harcoded AppId of the MPC RSA Verifier
+def verifyJWTProof(epk, AddressSeed, RSA_pk, proof):
+  # Perform on-chain ZK-SNARK proof verification (e.g. GROTH16)
+  assert ProofIsValid(VKey, proof, epk, AddressSeed, RSA_pk)
+  # Check it is in the expected group
+  assert Global.groupSize == 3
+  assert Txn.groupIndex == 0
+  assert Gtxn[2].note == AddressSeed
+  assert Gtxn[1].appId == MPCRSAVerifierAppId
+  assert Gtxn[1].appArgs[0] == RSA_pk
+```
+\
+**MPC RSA Key Authenticity Verifier (MPCRSAVerifier) (Stateful App)**
+```python
+# Assert whether given RSA_pk is authentic
+def MPCVerifyRSAKey(RSA_pk):
+  assert IsRSAStoredInCache(RSA_pk)
+# Update the cache with the latest authentic RSA public key as retrieved
+# from the official endpoint by MPC HTTPs request (Chainlink), communicated by Wormhole.
+def UpdateCache(VAAMessage):
+  assert Wormhole.Core.MessageIsValid(VAAMessage)
+  UpdateRSACache(VAAMessage.payload.newRSAPk)
+```
+\
+**Authorizer Gateway (AuthorizingLSIG) (LSIG)**
+```python
+AddressSeed = TMPL('TMPL_ADDRSEED')
+EphemeralPK = TMPL('TMPL_EPK')
+VerifierAddr = "..." # Harcoded Address of the verifier LSIG
+MPCRSAVerifierAppId = "..." # Harcoded AppId of the MPC RSA Verifier
+defaultEphemeralKey = "DEADBEEF" # Harcoded default ephemeral public key (base case)
+def ZKVerifyOAuth2JWT():
+    assert Txn.note == AddressSeed
+    assert Txn.type == "rekey"
+    assert Global.groupSize == 3
+    assert Txn.groupIndex == 2
+    assert Gtxn[0].sender == VerifierAddr
+    assert Gtxn[1].appId == MPCRSAVerifierAppId
+    assert Gtxn[1].appArgs[0] == RSA_pk
+    # ... and other relevant assertions to ensure it's grouped with a relevant Verifier
 
-def GetSuiAdapter(SuiAddr,BoundEpk,AuthReceiverAppId):
-  return SuiAdapter LSIG with template variables SuiAddr, BoundEpk and AuthReceiverAppId filled in.
+def ZorkinAuthorizingLSIG(epk, sig):
+    addressBinding = len(AddressSeed) == 32
+    epkBinding = len(EphemeralPK) == 32
+    bindingValid = addressBinding and epkBinding
+    assert bindingValid
 
-def getPreviousEpk(AuthReceiverAppId):
-  # read the previous epk from the box storage of auth receiver, if any
-  return getBoxValue(AuthReceiverAppId, 'prevEpk')
+    txSigIsValid = ED25519_Verify(sig, Txn.id, EphemeralPK)  
 
-def RelayMessage(DelgVAA):
-  newEpk = DelgVaa.message.epk
-  SuiAddr = DelgVaa.message.suiAddr
-  AuthReceiverAppId = DelgVaa.targetContract
-  prevEpk = getPreviousEpk(AuthReceiverAppId)
-  # Construct group transaction with application call to ReceiveLogin specifying the message
-  Gtxn=[AuthReceiver.ReceiveLogin(DelgVAA)]
-  if prevEpk != None:
-    # Add a transaction that rekeys the previous SuiAdapter to a SuiAdapter with the new epk as the bounded ephemeral public key
-    prevSuiAdapter = GetSuiAdapter(SuiAddr, prevEpk, AuthReceiverAppId)
-    newSuiAdapter = GetSuiAdapter(SuiAddr, newEpk, AuthReceiverAppId)
-    Gtxn.push(Rekey prevSuiAdapter to newSuiAdapter)
-  # Sign with specialized relayer private key and prevSuiAdapter Logic Sig if applicable
-  Sign(Gtxn)
-  # Send to the blockchain
-  Submit(Gtxn)
+    if (EphemeralPK == defaultEphemeralKey or !txSigIsValid):
+        return ZKVerifyOAuth2JWT()
 
-# Listen for message availability and invoke RelayMessage on it
-wormhole.listenForMessage(RelayMessage)
+    return txSigIsValid
 ```
 
-**SuiAdapter LSIG Account**
-```python
-SuiAddr=TMPL('suiAddr')
-BoundEpk=TMPL('epk')
-AuthReceiverAppId=TMPL('authRcverAppId')
-def approve(epk, sig(Txn.id, epk)):
-    if(Global.groupSize == 2 and Gtxn[0].appId==AuthReceiverAppId):
-        return True
-    else:
-        assert epk==BoundEpk
-        assert ED25519_Verify(sig(Txn.id, epk)
-    Return True
-```
+### General Authentication (Recursive Case)
 
-**AuthReceiver App**
-```python
-def ReceiveLogin(DelgVAA):
-    # Check it's an authentic message from the emitter
-    assert parseAndVerifyWormholeVAA(DelgVaa)
-    ConferLogin(DelgVaa.suiAddr,DelgVaa.epk)
-    StoreLoginRecord(suiAddr, epk)
+To begin the general authentication ceremony, an ephemeral keypair (`epk`, `esk`) is generated client-side. It is specified as the nonce in the OpenIDConnect OAuth2 authentication request, where the chosen OAuth2 provider signs an issued JWT containing the nonce with an RSA key with public key component `RSApk` that's specified at their JWK endpoint. The JWT is then provided to a prover, to generate a proof of a ZK program circuit that has the JWT as private input, and `RSApk`, `AddressSeed` (Poseidon hash of the sub, client and issuer fields of the JWT) and the `epk` as public inputs. The proof proves that the specified RSA key signed the JWT, and that the JWT payload specifies claims of that match that can derive the AddressSeed in the public input, and that the nonce of the JWT specifies the `epk`. 
+\
+\
+Now we reproduce the base account containing the users assets. This is trivial, since base account is the above Authorizer LSIG with `TMPL_EPK` set to `0xDEADBEEF` and `TMPL_ADDRSEED` to `AddressSeed`, which we refer to as the `BaseLSIG`. Next we reproduce the Authorizer LSIG that is set as the `auth-addr` (Authorizing Address) of the account denoted `AuthorizingLSIG`, by using the indexer to search for the last transaction it issued where the ephemeral key used must be specified (read from the LSIG or its arguments) allowing us to reproduce the LSIG by filling in its respective template variables. 
+\
+\
+A group transaction is composed of three linked elements: a transaction to an LSIG with the `JWTVerifier` for proof validation, an application call to `MPCRSAVerifier` to confirm the authenticity of an RSA key for the issuer, and a rekeying transaction changing the `BaseLSIG` to a new Authorizing LSIG with the `epk`. The `AuthorizingLSIG` signs the rekeying transaction and will approve it if it's part of the group transaction and the unique verifier address, defined by its Verification Key parameters, matches. The RSA key verifier maintains a cache, sourced from the issuer's JWK endpoint via decentralized computation (like *Chainlink*), updated periodically (e.g., weekly) to minimize gas fees.
+\
+If any part of the group transaction fails, the entire transaction is invalidated. However, a successful group transaction means the ephemeral key has been authorized, as it's confirmed that the user could access the OAuth2 provider account, uniquely associated with the Address Seed, without revealing the sensitive JWT on-chain, thanks to ZK-SNARKs.
+\
+The new Authorizing LSIG gets spending authority from the `BaseLSIG` upon validating a signature argument of an ongoing transaction from the `BaseAccount`. Integral to the process, the Verifier LSIG checks that the rekey transaction to the `AuthorizingLSIG` cites the AddressSeed, matching the public proof input to ensure only valid proofs can rekey `BaseAccounts` with the same AddressSeed. Additionally, it confirms the presence of `MPCRSAVerifier` within the group, tasked with verifying the RSA public key's authenticity, as presented in the public input of the proof.
+\
+\
+The following section addresses the unique scenario of initial account creation, where the `BaseLSIG` doesn't meet the 0.1A Minimum Balance Requirement and initially has no secure authorizing LSIG. Despite these conditions, security is maintained, as will be explained.
 
-def RetrieveSuiAdapterLSIGAddr(suiAddr, epk):
-    Return Addr of SuiAdapter with Template Variables
-    filled with suiAddr & epk respectively
+![GeneralAuthCeremony](./GeneralAuthCeremony.png)
 
-def ConferLogin(suiAddr, epk):
-    # Rekey any existing login session to the new LSIG
-    if(PreviousLoginExists(suiAddr)):
-        # Get previous login session & its LSIG
-        prevEpk = GetLoginRecord(suiAddr)
-        prevAdapterAddr = RetrieveSuiAdapterLSIGAddr(suiAddr, prevEpk)
-        newAdapterAddr = RetrieveSuiAdapterLSIGAddr(suiAddr, epk)
-        # Assert group transaction is performing the expected rekey
-        assert Global.groupSize==2
-        assert Gtxn[1].type=="rekey"
-        assert Gtxn[1].from==Gtxn[1].to
-        assert Gtxn[1].from==prevAdapterAddr
-        assert Gtxn[1].rekeyTo==newAdapterAddr
-```
+
+### Account Creation (Base Case)
+
+At initial account creation, the `BaseLSIG` serves as the authorizing address and cannot be rekeyed until it receives sufficient funds. The `BaseLSIG` remains private, known only to the user linked to the OAuth2 account, due to the hash of claim identifiers such as sub, clientId, and issuer. This ensures no risk of unauthorized rekeying by third parties. Additionally, built-in logic in the LSIG prevents access via the ephemeral key initially.
+\
+The account gains funding through a rekey transaction that credits it with 0.1A, satisfying the Minimum Balance Requirement (MBR) and allowing rekeying. This is performed in the same group transaction to ensure atomicity, with a third party providing the necessary funds.
+\
+Following account setup, the user receives a recovery email with the address seed, enabling account recovery if the client or issuer becomes inaccessible. The email's RSA signature comes from an officially recognized endpoint via a decentralized HTTPS request (MPC) and is linked on-chain to the address seed, creating a clear connection for later recovery.
+
+![CredentialCreation](./CredentialCreation.png)
+
+
+### Signing a Transaction
+
+Upon authentication, a user can transact by signing the transaction's unique Id with their ephemeral private key (`esk`) and submitting this signature as an argument to the LSIG. The `AuthorizingLSIG` validates and approves the transaction if the signature corresponds to the transaction Id and matches its bounded ephemeral public key.
+
+![NativeGeneral](./SigningTxn.png)
+
+
+### Account Recovery
+
+In the event the issuer or client (e.g. interfacing website) go offline, the user can recover access without trusting a central authority to manage their keys and to use them responsibly. This is possible, as the email they were initially sent specifies the address seed and through the DKIM signing protocol of email we can verify that only the user with access to the DKIM signature is requesting account recovery through an appropriate ZK-SNARK proof (See ZKEmail). The authenticity of the RSA key with which the email identifier was signed via DKIM can be verified by verifying against the RSA key stored on-chain as bound to the users ephemeral AddressSeed (e.g. BoxStorage). Currently ZK Email Recovery is a work in progress, and the above construction is likely in-compatible and needs a trivial extension to work correctly with email recovery.
+
+![NativeGeneral](./AccountRecovery.png)
+
 
 ## Assumptions
-- AuthReceiver and AuthEmitter have their fees funded by the service provider using techniques like [Fee Pooling](https://developer.algorand.org/docs/get-details/transactions/#pooled-transaction-fees).
-- Wormhole Bridge is secure, and the message received by the target contract matches the message that was sent by the source contract.
 
-## Security Features
+- RSA keys obtained from Web2 providers via decentralized MPC HTTPS requests are genuine.
+- The bridge interfacing with MPC providers, such as Chainlink, is secure.
+- The client is trustworthy.
+- Costs, including the 0.1A MBR to establish an Algorand account, are sponsored by a third party like Zorkin, thus are not a concern for the user.
 
-- Maintains the same guarantees that ZKLogin offers
-- The contract code can be optimized at a low level, such as restricting rekeying to authorized AuthReceiver actions. This is omitted for simplicity, maintaining focus on the higher-level method.
-- There is a trivial extension to enforce expiration on the ephemeral key, to prevent long ranged attacks. E.g. have the key expire after 8 hours of use.
+## Security Analysis
+
+We prove basic security features of the above native ZK-OAuth2 solution by enumerating malicious scenarios that are possible and showing how security would be maintained in each case. Various minute adjustments can be made to improve security, however we intentional leave these out for clarity and simplicity of explanation.
+
+- Access another users address seed without a valid proof or ephemeral private key: the proof would fail, and they couldn't sign spending transactions with the ephemeral private key.
+- Forge a JWT with an unauthentic RSA key: this would only have use during the General Authentication Ceremony, and the atomic group transaction would fail as `MPCRSAVerifier` would reject the RSApk as unauthentic
+- Replay a proof: LogicSig arguments are visible on-chain, so you can replay them. However a proof is explicitly tied to both an account through the AddressSeed, and the ephemeral key, and providing it only allows the rekey transaction. Meaning they could only use it to rekey an authorizing LSIG for which they lack the ephemeral private key to make use of any useful transactions like spending from the account.
 
 ## Future Work
 
-- Creating an MVP to prove the concept and test the method. Engaging in further refinement during the iterative R&D process.
-- Deploying the MVP to production if proven to be a product-market fit without legal or technical issues.
-- Constructing a custom ZK-SNARK OAuth2 proving system that is native to Algorand and seeks to improve on the work of Sui, removing the need for the Wormhole bridge.
-- Inclusion in a larger product that solves low-friction auth on Algorand and beyond.
+- Refining the concrete implementation details, to ensure safety, feasibility, efficiency and completeness. For example ZK Email account recovery is still largely conceptual, and is absent from the above MVP.
+- Adding ZK Magic Link, which is a trivial extension of the above work
+- There are many trivial variants of this base work, for example adding ephemeral key expiration by referencing the expiration field of the JWT and using the Lease field of a transaction for added security. These were intentionally left out for improved clarity of explanation.
+
+## References & Resources
+- https://github.com/zkemail/zk-email-verify
+- https://www.youtube.com/watch?v=gcKCW7CNu_M
+- https://github.com/zkp-application/circom-rsa-verify
+- https://developer.algorand.org/docs/get-details/transactions/#pooled-transaction-fees
+- https://developer.algorand.org/docs/get-details/accounts/rekey/
+- https://developer.algorand.org/docs/get-details/dapps/smart-contracts/smartsigs/modes/#contract-account
+- https://chain.link/
+- https://www.youtube.com/watch?v=sPCHiUT3TmA
+- https://github.com/TheFrozenFire/snark-jwt-verify
+- https://sui.io/zklogin
 
 ## Contribution Statement
 
-The system design and proposal, a novel concept independently created by **Winton Nathan-Roberts from Sydney, Australia**, is to my knowledge original. Thanks to the Algorand community for their general support! All rights reserved.
+The system design and proposal presented herein were developed by Winton Nathan-Roberts of Sydney, Australia. It is important to recognize that this work is an extension of the foundational concepts established in ZK-OAuth2. Prior efforts in this domain, such as the basic principles behind ZK-OAuth2 and approaches for its realization, have been previously discussed in resources like [snark-jwt-verify](https://github.com/TheFrozenFire/snark-jwt-verify) and ZK-Login by Sui.
+
+The distinctive contributions of this project, to my knowledge, relate specifically to the intellectual property encompassing the adaptation of ZK OAuth2 for use on the Algorand blockchain. These contributions include the unique implementation described above, the integration of Zero-Knowledge (ZK) Email for secure account recovery, and the deliberate exclusion of centralized third-party entities such as salting services. All relevant and existing rights are reserved, and any applicable copyright laws are duly observed.
 
 ## Disclaimer
 
-This conceptual service design and proposal, which may change and has no release guarantee, carries no warranties or liabilities as allowed by law. Additionally it has not been audited for security vulnerabilities and shouldn't be considered production ready. I aim to commercialize it and am developing an MVP towards this goal. This work is independent and is not necessarily affiliated with my other activities. I reserve the right to do anything with my work, including commercialisation in anyway. I may apply for funding to help me build the idea into production. Copyright, All Rights Reserved. The name may change overtime.
+The work, including but not limited to text, graphics, code, or other materials ("Content"), published by the author or contributors ("We", "Us", "Our") on [insert domain or platform name here] is for informational purposes only and is provided 'as is' and 'as available' without any representation or endorsement made. 
+
+- NO WARRANTIES: We make no warranties, guarantees, or promises of any kind, either express or implied, including but not limited to, implied warranties of merchantability, fitness for a particular purpose, non-infringement, or that the use of the Content will be uninterrupted or error-free.
+- NO LIABILITY: We will not be liable for any damages, whether direct, indirect, incidental, special, consequential or exemplary, including but not limited to damages for loss of profits, goodwill, use, data or other intangible losses (even if We have been advised of the possibility of such damages), resulting from or in connection with the use of or the inability to use the Content.
+- INDEMNIFICATION: You agree to indemnify, defend, and hold harmless the author(s), contributors, and Our affiliates from any and all claims, liabilities, expenses, and damages, including legal fees and costs, arising out of your use of the Content or your breach of any terms of this disclaimer.
+- NOT PRODUCTION READY: The Content is not production ready, and may contain serious vulnerabilities that have yet to be identified. You should not rely on the Content for purposes of production or critical systems.
+- USE AT YOUR OWN RISK: You use the Content solely at your own risk. It is your responsibility to ensure any application of the Content does not infringe upon any legal or propriety rights. We highly recommend consulting a qualified professional before adopting any part of the Content.
+- VERIFICATION OF CLAIMS: The claims made within the Content are not necessarily true, and have not been independently verified. You should conduct your own research and due diligence to verify any statements or representations made within the Content before reliance thereon.
+
+This disclaimer shall be governed by and construed in accordance with the laws of [relevant jurisdiction], without regard to its conflict of law principles. If any portion of this disclaimer is determined to be unlawful, void, or unenforceable, in whole or in part, such determination shall not affect the validity and enforceability of any other provision.
+
+By using the Content, you acknowledge that you have read this disclaimer, understand it, and agree to be bound by its terms and conditions. If you do not agree to the terms, you must not use the Content. This disclaimer was written by me, and I'm not a lawyer or legal professional.
