@@ -54,11 +54,6 @@ The SessionAccount has a template variable for a public key of a key held by the
 
 These improvements focus on enhancing security, reducing costs, and offering a more adaptable and user-friendly Zero-Knowledge self-custodial authentication mechanism suitable for a variety of applications and authentication services.
 
-
-#### Stateful Smart Contract Variant
-
-- Rather than repeatedly rekeying the `SessionAccount` to manage authorized sessions, a more straightforward approach is to use an external stateful smart contract to keep track of session data. This alternative method would store session information in what's typically referred to as "box storage", a term used in the context of this text to describe the storage system utilized by the smart contract. However, regardless of the session management strategy chosen, it's essential to define the `SessionAccount` as a Logic Signature (also known as a smart signature). The Logic Signature is a key component that allows the `SessionAccount` to function in a manner similar to a standard Algorand wallet. Without it, the account would not have the flexibility required for general use, as smart contracts on their own cannot perform all actions of a wallet and have certain constraints that could prove restrictive. The Logic Signature essentially gives the `SessionAccount` the capability to authorize transactions in a secure and programmable way, ensuring that it adheres to the predefined rules embedded within it. The primary shortcoming of this variant is its inflexibility, as it deviates from behaving like a conventional wallet. Consequently, it may not be suitable for dApp transactions that anticipate interactions with a regular wallet and require a specific structure for group transactions.
-
 ## Method
 
 The following provides a concise overview of the system. First we introduce the components to the solution, and later we describe protocols and procedures incorporating these procedures to achieve some of the functionality outlined in the introduction.
@@ -68,50 +63,49 @@ The following provides a concise overview of the system. First we introduce the 
 
 #### JWTCircuit
 
-The JWTCircuit is a ZK-SNARK circuit designed to relate the inputs together through equality constraints to assert that the JWT is signed with the specified RSA key, and the public input is a hash of the `OAuthAccountGUID`, the `CustomClaim` key & value denoted `CustomClaimKey` and `CustomClaimValue` respectively, and `RSAPublicKey`. `OAuthAccountGUID` is the hash of the issuer, audience and subject fields of the JWT.
+The JWTCircuit is a ZK-SNARK circuit designed to relate the inputs together through equality constraints to assert that the JWT is signed with the specified RSA key, and the public input is a hash of the `OAuthAccountGUID`, `CustomClaimValue`, `RSAPublicKey`, and `OAuthClientEntry`. `OAuthAccountGUID` is the hash of the issuer and subject fields of the JWT, uniquely identifying the users account on the issuers platform. `OAuthClientEntry` is a unique identifier of the particular key of the `CustomClaim` used to specify the ephemeral key and its expiration on an interfacing OAuth client on the issuer that authenticates users into their application with OpenIdConnect.
 
 ```java
-// The JWTCircuit's essential function is to confirm the validity of a private JWT key for a specific public identifier.
-// MIMC7 and Poseidon denote cryptographic hashing algorithms.
-
+// JWTCircuit's primary role is to validate the correctness of the private JWT key for its corresponding public identifier.
+// MIMC7 and Poseidon are hashing algorithms.
 JWTCircuit(private jwt, private RSAPublicKey, private CustomClaimKey, public publicInput):
-  // Assert that the JWT has been signed with the provided RSA Public Key.
+  // Ensure the JWT is signed with the provided RSA Public Key.
   assert RSAVerify(jwt, RSAPublicKey)
-  // Utilize the Poseidon hash function to compute OAuthAccountGUID from issuer, audience, and subject claims in the JWT.
-  OAuthAccountGUID = Poseidon(jwt.iss, jwt.aud, jwt.sub)
+  // Use Poseidon hash to obtain OAuthAccountGUID from JWT's issuer and subject.
+  OAuthAccountGUID = Poseidon(jwt.iss, jwt.sub)
+  // Retrieve the value associated with the CustomClaimKey from the JWT.
   CustomClaimValue = jwt[CustomClaimKey]
-  // Deploy the MIMC7 hash function to calculate the public identifier (PublicInput) from OAuthAccountGUID, CustomClaimKey, CustomClaimValue, and RSAPublicKey.
-  PublicInput = MIMC7(OAuthAccountGUID, CustomClaimKey, CustomClaimValue, RSAPublicKey)
-  // Confirm that the computed PublicInput aligns with the publicInput supplied for verification.
+  // Establish a unique identifier for a particular OAuth client based on the issuer's information.
+  OAuthClientEntry = Poseidon(jwt.iss, jwt.aud, CustomClaimKey)
+  // Utilize MIMC7 hash to compute the public identifier (publicInput) from OAuthAccountGUID, CustomClaimValue, RSAPublicKey, and OAuthClientEntry.
+  PublicInput = MIMC7(OAuthAccountGUID, CustomClaimValue, RSAPublicKey, OAuthClientEntry)
+  // Check that the computed PublicInput matches the provided public input.
   assert PublicInput == publicInput
 ```
 
-The circuit, once compiled, manifests as a Groth16 ZK-SNARK proving system consisting of a verifier and a prover, using the BN254 elliptic curve for ECC. The verifier is described in terms of parameters referred to as `JWTVKey`. The verifier will verify proofs against a public input on-chain, along with the pre-image to the hash (`OAuthAccountGUID`, `CustomClaimKey`, `CustomClaimValue`, & `RSAPublicKey`). Successful verification, assuming replay attacks are prevented through signing with the ephemeral key specified in the `CustomClaimValue`'s pre-image, will prove that the sender is in possession of a JWT that was signed with the private key counterpart to the `RSAPublicKey` that grants access to the account uniquely identified by `OAuthAccountGUID`.
+Upon compilation, the circuit becomes part of a Groth16 ZK-SNARK proving system, comprising a verifier and a prover that utilize the BN254 elliptic curve. The verifier operates based on parameters identified as `JWTVKey`, verifying proofs against on-chain public input and the accompanying pre-image hash elements (`OAuthAccountGUID`, `CustomClaimValue`, `RSAPublicKey`, `OAuthClientEntry`). Assuming protection against replay attacks via the signing ephemeral key specified in `CustomClaimValue`, successful proof verification confirms the sender possesses a JWT authenticated with the private counterpart of `RSAPublicKey`, and that the user is distinctly identified by `OAuthAccountGUID`, authorizing through the OAuth client uniquely denoted by `OAuthClientEntry`, where the ephemeral key and its expiry are articulated in the `CustomClaimValue` under `CustomClaimKey`.
 
 #### ProofVerifier
 
-The `ProofVerifier` component functions as an on-chain logic signature designed to authenticate proofs supplied by the `JWTCircuit`-derived prover. Its primary role is to validate these proofs against specified public inputs, as well as the hash's pre-image components: `OAuthAccountGUID`, `CustomClaimKey`, `CustomClaimValue`, and `RSAPublicKey`. A successful verification demonstrates that the requesting party possesses a JWT authenticated by the corresponding private key of the `RSAPublicKey`. Consequently, this confirms their authorized access to the account identified by `OAuthAccountGUID`, assuming the absence of replay attacks whose mitigation is explained later.
+The `ProofVerifier` is a logic signature, purposed for verifying proofs provided by a `JWTCircuit`-based prover. The verifier is described in terms `JWTVKey`, its verification parameters. It verifies these proofs against the public input given in the note; proving account access through a JWT for the user identified by `OAuthAccountGUID` accessed through the OAuth client identified by `OAuthClientEntry`,
 
-Below is pseudocode for the `ProofVerifier` approval logic:
+The pseudocode of the verification logic:
 ```python
-# Define the hardcoded verification key based on JWTVKey parameters.
+# Establish the verification key using parameters from JWTVKey.
 VKey = JWTVKey
 
-def ProofVerifier(proof, publicInput):
-    # Execute GROTH16 proof verification using the JWTVKey parameters
-    # specifically tailored to our JWT circuit's verification needs.
+def ProofVerifier(proof):
+    # Ensure the transaction fee is zero to prevent exploitation through fee depletion.
+    assert Txn.fee() == 0
+    # Apply the GROTH16 verification algorithm with JWTVKey parameters
+    # that are specifically crafted for our JWT circuit verification requirements.
+    publicInput := Txn.note()
     assert ProofIsValid(proof, publicInput, VKey)
 ```
 
-In this implementation, the `ProofVerifier` function employs the GROTH16 verification algorithm, asserting the proof's validity predicated on the given public input and the statically defined `VKey`. It ensures that the proof meets all the verification criteria.
-
 #### RSAVerifier
 
-The `RSAVerifier` is a stateful smart contract on the blockchain which plays a pivotal role in maintaining the integrity of token authentication. It is tasked with the continuous updating of RSA public keys sourced from the JWKs (JSON Web Keys) endpoints of OAuth providers that support the OpenID Connect protocol. This updating process utilises secure multi-party computation mechanisms, ChainLink being an illustrative example.
-
-Upon invocation of its function `UpdateOAuthJWKSCache`, the `RSAVerifier` performs a crucial authentication check: it compares the RSA public key presented in a transaction against its cache of trusted keys. This cache represents the current set of valid keys from known OAuth providers. Should a public key not be listed within this set, the `RSAVerifier` will categorically reject the transaction, thereby preventing any fraudulent authentication attempts involving the use of a maliciously signed unauthentic JWT.
-
-The code snippet presents two functions integral to the `RSAVerifier` smart contract: `UpdateOAuthJWKSCache` and `ValidateOAuthRSAPublicKey` itself.
+The `RSAVerifier` is an application that checks if an RSA public key is in a cache of JSON Web Keys (JWKs) from an issuer's endpoint, used for signing JSON Web Tokens (JWTs). This is done through its `ValidateOAuthRSAPublicKey` function, primarily to verify JWT authenticity. While it initially focuses on a single issuer, it can be extended to multiple issuers using 'BoxStorage'. To reduce costs, the JWK cache is updated infrequently via the `UpdateOAuthJWKSCache` function, with updates sourced through the Wormhole Bridge from a Chainlink-like Multi-Party Computation (MPC) solution.
 
 ```python
 # State management using BoxStorage, a construct analogous to Algorand's key-value pair storage
@@ -138,133 +132,123 @@ def UpdateOAuthJWKSCache(VAAMessage):
   issuerRSAPublicKeys[issuer] = keys
 ```
 
-The `UpdateOAuthJWKSCache` function updates a smart contract's cache of OAuth issuer RSA public keys when a new key set arrives within a `VAAMessage`. This message is presumed to be coming from a trustworthy MPC system, appropriately authenticated through the Wormhole infrastructure. The function validates the message with `Wormhole.Core.MessageIsValid` and also verifies that it is sent from the expected MPC HTTPS client and its originating chain. Subsequently, it updates the issuer's corresponding entry in `issuerRSAPublicKeys` with the new keys.
+#### TenantAuth Application
 
-The `ValidateOAuthRSAPublicKey` function checks if a given RSA public key, as part of an OAuth validation process, exists within the contract's cache of keys related to a specific issuer. It does this by asserting that the public key is contained within the set of keys associated with the issuer in the `issuerRSAPublicKeys` storage. If the assertion fails, the key is deemed invalid, and the validation process is terminated, ensuring only transactions with recognized and valid RSA public keys are allowed.
+The `TenantAuth` verifies that users authorizing a new SessionAccount are authenticated with a registered Client Id from a supported issuer. It checks the ephemeral public key and its expiration in the `CustomClaimValue` under `CustomClaimKey`. Uniqueness is maintained by `OAuthClientEntry`, a Poseidon hash of the issuer, audience fields of the JWT, and `CustomClaimKey`. Only the creator of the `TenantAuth` app, typically a Zorkin user, can register an `OAuthClientEntry`. A special contract, `FeeFunder`, covers authentication fees, funded by the Zorkin user who established the `TenantAuth`.
 
-#### FeeFunder
-
-The `FeeFunder` is an LSIG that can be invoked by anyone, however it will only approve an application call to the `FeeFunderState` application to assert that the sessionAccountAddr is a registered SessionAccount; and that the transaction is apart of a group that corresponds to the rekeying of the SessionAccount to a new authorizing SessionAccount to establish a new state. FeeFunder is intended to cover fees associated with the transaction group, and is funded by an external account, such as by Zorkin. It asserts exactly the right fee is paid, to prevent fee draining exploits. 
-
+##### TenantAuth Application
 ```python
-# State management using BoxStorage
-BoxStorage session
-
-# Function to register a new SessionAccount
-def RegisterSessionAccount(sessionAccountAddr):
-  # Assert the sender is the Creator of this applciation
-  assert Txn.sender == AppParam.creator(0)
-  # Add the SessionAccount address to the BoxStorage with an initial empty state
-  session[sessionAccountAddr] = []
-
-# Function to deregister an existing SessionAccount
-def DeregisterSessionAccount(sessionAccountAddr):
-  # Assert the sender is the Creator of this applciation
-  assert Txn.sender == AppParam.creator(0)
-  # Remove the SessionAccount address from the BoxStorage
-  delete session[sessionAccountAddr]'
-
-# Function to check whether a specific SessionAccount is registered
-def SessionAccountIsRegistered(sessionAccountAddr):
-  # Anyone can query this function
-  assert session.has(sessionAccountAddr)
-```
-
-```python
-FeeFunderStateAppId = TMPL('FEEFUNDERSTATEAPPID')
+BoxStorage OAuthClientEntrys
 string ProofVerifierAddr # Hardcoded Address of the verifier LSIG
 string RSAVerifierAppId # Hardcoded App ID of the RSA Verifier
 
-def FeeFunder():
-  # Assert the Txn is an application call to FeeFunderState smartcontract, with application id FeeFunderStateAppId
-  assert Txn.appId == FeeFunderStateAppId
-  # Assert the Txn is calling the RegisterSessionAccount function
-  assert Txn.application_args[0] == "SessionAccountIsRegistered"
-  sessionAccountAddr := Txn.application_args[1]
-  # Assert the Txn is within a group corresponding to the SessionAccount with address sessionAccountAddr
-  # that rekeys the SessionAccount to a new authorizing SessionAccount to establish a session
-  assert Gtxn[1].addr == ProofVerifierAddr
-  assert Gtxn[2].appId == RSAVerifierAppId
+# Add a new description of an OAuth client, that's for a specific issuer using an specific interfacing clientId
+# Specified as the Poseidon hash of the clientId, issuer and CustomClaimKey
+def AddNewOAuthClientDescriptor(OAuthClientEntry):
+  # Assert only the creator is registering new OAuth clients
+  assert Txn.sender == AppParam.creator()
+  OAuthClientEntrys.add(OAuthClientEntry)
+
+# Approve a SessionAuthorization, if the sender can prove access to registered OAuth client
+def ApproveSession():
+  # Assert the Txn is a part of a group of 4 transactions, representing an attempt to create an authorized session
   assert Txn.group_size == 4
-  assert Gtxn[3].type == "rekey"
-  assert Gtxn[3].sender == sessionAccountAddr
-  assert Gtxn[3].rekeyTo != sessionAccountAddr
-  # Assert the Txn has a fee that's the exact amount to cover the session authorization
+  # Get the transaction from the base SessionAccount in the 3rd slot
+  baseSessionAccountTxn := Gtxn[3]
+  # Get the pre-image parameters from the transaction note
+  Epk, Exp, RSAPublicKey, OAuthAccountGUID, OAuthClientEntry = baseSessionAccountTxn.note()
+  # Create the expected CustomClaimValue from the pre-image parameters
+  CustomClaimValue = Sha256(Epk, Exp)
+  # Create the expected public input from the pre-image parameters
+  PublicInput = MIMCHash(OAuthAccountGUID, CustomClaimValue, RSAPublicKey, OAuthClientEntry)
+  # Assert the verifier is the correct verifier, with address ProofVerifierAddr which will uniquely identify the VKey parameters used to verify the proof
+  proofVerifierTxn := Gtxn[1]
+  assert proofVerifierTxn.sender == ProofVerifierAddr
+  # Assert it the verifier is verifying a proof against the expected public input
+  assert proofVerifierTxn.note() == PublicInput
+  # Assert the interfacing OAuth client with ephemeral key and expiration parameters specified through the CustomClaim with key CustomClaimKey is registered (i.e. a client you have established)
+  assert OAuthClientEntrys.has(OAuthClientEntry)
+
+  # Verify the RSA key that signed the JWT is valid, by asserting that the RSAVerifier application is in the group which will verify the RSA public key authenticity
+  RSAVerifierTxn := Gtxn[2]
+  assert RSAVerifierTxn.appId == RSAVerifierAppId
+  assert RSAVerifierTxn.application_args[0] == "ValidateOAuthRSAPublicKey"
+  assert RSAVerifierTxn.application_args[1] == RSAPublicKey
+
+# Revoke Session function, which can only be called by the creator of the TenantAuth application to authorize a rekey
+# of a SessionAccount back to its base state, ending any authorized session.
+def RevokeSession():
+  # Only the Tenant creator, i.e. a Zorkin user, can revoke a session
+  assert Txn.sender == AppParam.creator()
+  # Assert in a group of two transactions
+  assert Txn.group_size == 2
+  # Assert the second transaction in the group is a rekey of the SessionAccount back to its base state.
+  assert Gtxn[1].type == "rekey"
+  assert Gtxn[1].rekeyTo == Gtxn[1].sender
+```
+
+##### FeeFunder LSIG
+
+The `FeeFunder` is specifically designed so anyone can use it to invoke the `ApproveSession` function of the `TenantAuth` application, covering fees for the entire group transaction involved in creating a new authorized session.
+
+```python
+TenantAuthAppId = TMPL('TMPL_TENANTAUTHAPPID')
+
+def FeeFunder():
+  # Assert the Txn is an application call to TenantAuthAppId smartcontract
+  assert Txn.appId == TenantAuthAppId
+  # Assert the Txn is calling the RegisterSessionAccount function
+  assert Txn.application_args[0] == "ApproveSession"
+  sessionAccountAddr := Txn.application_args[1]
+  # Assert the FeeFunder is covering the fees of the Session authorizing transaction group  
   assert Txn.fee() == 4 * Global.MinTxnFee
-  # Plus any additional conditions to ensure the transaction is valid...
 ```
 
 
 #### SessionAccount
 
-The `SessionAccount` is a Logic Signature Account that holds the user's assets. It's assumed that the authorizing address is always an instance of a SessionAccount with the same `OAuthAccountGUID`, but different authorizing session access parameters `epk` (ephemeral public key) that has private key `esk` and `exp` (expiry of the session).
+The SessionAccount is a Logic Signature Contract Account designed to secure users' assets and manage certain authentication steps in creating and using sessions with an ephemeral key. It primarily handles four scenarios:
 
-Spending transaction authorization is granted by the approval logic if:
-- The user provides a signature of the transaction Id signed with `esk` and isn't expired (i.e. `exp` < `Txn.lastValidity`), and it's post account creation (i.e. `epk` != `DefaultEphemeralKey`).
-- The user submits a valid proof and public input, demonstrating access to the OAuth2 account identified by `OAuthAccountGUID`, and signs the transaction Id with the `newEpk` private key which is in the pre-image to the `CustomClaimValue`. A signature of the transaction Id by the private key of the `newEpk` is provided as an argument to the `SessionAccount` LSIG and is verified to prevent replay attacks.
-\
-\
-Upon rekeying to a new authorizing `SessionAccount` with access to the initial account, the user is considered to be in an authorized session.
+1. **Revoking Session Access**: The SessionAccount can be reset to its original state, effectively revoking access to an active session. This action can be initiated remotely by the creator of the TenantAuth application.
 
-To mitigate replay attacks, verification incorporates signing with a one-time-use ephemeral key, as outlined by the `CustomClaimValue`'s pre-image. The verification key, labeled as `JWTVKey`, is embedded in the circuit and thus establishes a unique address correlating to the verification key parameters. This exclusivity permits subsequent transactions to verify that the characteristics of the verifier conform to those defined by `JWTVKey`.
+2. **Creating an Authorized Session**: When a user establishes a new session, the SessionAccount is reconfigured with a new ephemeral key and expiration parameters, as defined in the JWT's `CustomClaim`. This occurs after the user validates their access to the associated OAuth account (identified by `OAuthAccountGUID`) and the OAuth client (specified by `OAuthClientEntry`).
+
+3. **Transacting in an Authorized Session**: The SessionAccount allows transactions during an active session, provided they are verified with the ephemeral key (`EpkTemplate`) and occur before its expiration (`ExpTemplate`).
+
+4. **Handling the Base Case**: In situations where the SessionAccount being authorized and the base SessionAccount are the same, transactions are only approved if they are authenticated through the OAuth account (identified by `OAuthAccountGUID`) and the OAuth client (indicated by `OAuthClientEntry`).
+
 
 ```python
 # Define constants and templates.
 DefaultEphemeralKey = Bytes(16, "0xDEADBEEF")
 ExpTemplate = TMPL('TMPL_EXP')
 EpkTemplate = TMPL('TMPL_EPK')
-CustomClaimKeyTemplate = TMPL('TMPL_CUSTOMCLAIMKEY')
 OAuthAccountGUIDTemplate = TMPL('TMPL_OAUTHACCOUNTGUID')
-ProofVerifierAddrTemplate = TMPL('TMPL_PROOFVERIFIERADDR') # Hardcoded Address of the verifier LSIG
-RSAVerifierAppIdTemplate = TMPL('TMPL_RSAVERIFIERAPPID') # Hardcoded Address of the verifier LSIG
-CreatorAddrTemplate = TMPL('TMPL_CREATORADDR') # Hardcoded Address of the Zorkin user that created this LSIG Account for one of their users
+TenantAuthAppId = TMPL('TMPL_TENANTAUTHAPPID')
 
-# Define a function to validate the JWT proof.
-def hasOAuthAccountAccess(sig):
-    """
-    Validate JWT proof to confirm ownership of the OAuth account.
+# Assert the Tenant is attempting to revoke the ephemeral key, ending the authorized session.
+# By rekeying the SessionAccount to the base SessionAccount.
+def tenantIsRevokingSession():
+    # Assert the Gtxn[0], the application call to the tenant, is specifically.
+    # Assert there's two transactions in the group; and the first is an application call to the TenantAuth application.
+    # And that it's specifically to the function "RevokeSession".
+    assert Txn.groupSize == 2
+    assert Gtxn[0].type == "appl"
+    assert Gtxn[0].appId == TenantAuthAppId
+    assert Gtxn[0].appArgs[0] == "RevokeSession"
 
-    This function will be triggered upon rekeying to an authorizing SessionAccount with updated 
-    ephemeral public key (EPK) and expiration (EXP) parameters upon valid JWT presentation.
-    """
-    # Confirm rekeying to SessionAccount with new EPK and EXP values tied to the OAuthAccountGUID.
     assert Txn.type == "rekey"
-    assert Txn.groupSize == 4
-    assert Txn.groupIndex == 3
-
-    # Retrieve pre-image parameters from the transaction note.
-    epk, exp, RSAPublicKey = Txn.note()
-
-    # Verify the JWT signature with the issuer's public key registered at the RSAVerifierApp.
-    RSAVerifierTxn = Gtxn[2]
-    assert RSAVerifierTxn.application_id == RSAVerifierAppIdTemplate
-    assert RSAVerifierTxn.application_args[0] == "ValidateOAuthRSAPublicKey"
-    assert RSAVerifierTxn.application_args[1] == RSAPublicKey
-
-    # Ensure that a valid proof of JWT ownership is provided by the sender.
-    CustomClaimValue = Sha256(epk, exp)
-    PublicInput = MIMCHash(OAuthAccountGUIDTemplate, CustomClaimKeyTemplate, CustomClaimValue, RSAPublicKey)
-    proofVerifierTxn = Gtxn[1]
-    assert proofVerifierTxn.sender == ProofVerifierAddrTemplate
-    assert proofVerifierTxn.note == PublicInput
-
-    # Verify that the ephemeral key signs the transaction ID to prevent proof replay attacks.
-    assert ED25519_Verify(sig, Txn.transaction_id, epk)
-    assert exp < Txn.last_valid_round
-    # Additional validation to ensure access to the OAuth account can be included here.
-
-    # If all conditions are satisfied, the JWT proof is valid.
-    return True
-
-# Assert that the creator is only attempting to revoke any active by rekeying the SessionAccount back to the root base SessionAccount
-def creatorIsOnlyRevokingActiveSession():
-    assert Txn.type == "rekey"
-    # Tnx.sender is the address of the initial SessionAccount
+    # Tnx.sender is the address of the initial SessionAccount, i.e. the underlying address
     assert Txn.rekeyTo == Txn.sender
-    # Assert the fee is the exact amount
-    assert Txn.fee() == 1 * Global.MinTxnFee
-    # Assert there's only one transaction in the group
-    assert Txn.groupSize == 1
+    # Assert the fee is 0, and covered by the tenant.
+    assert Txn.fee() == 0
+
+def hasOAuthAccountAccess(sig):
+    # Validate this transaction is in a group with a TenantAuth application to ApproveSession
+    # ApproveSession will handle the verification of the proof and public input.
+    assert Gtxn[0].type == "appl"
+    assert Gtxn[0].appId == TenantAuthAppId
+    assert Gtxn[0].appArgs[0] == "ApproveSession"
 
 # Entry point for LSIG (Logic Signature) execution.
 def SessionAccount(sig):
@@ -273,14 +257,13 @@ def SessionAccount(sig):
 
     This function determines whether a transaction is approved based on the session state.
     """
-    
     # Case: Revocation of any active session to the base account
-    if ED25519_Verify(sig, Txn.transaction_id, CreatorAddrTemplate):
+    if Gtxn[0].appId == TenantAuthAppId:
         # Assert the creator is only attempting to revoke any active session
-        assert creatorIsOnlyRevokingActiveSession()
+        assert tenantIsRevokingSession()
 
     # Case: Base state, representing first session creation
-    if EpkTemplate == DefaultEphemeralKey:
+    elif EpkTemplate == DefaultEphemeralKey:
         # Rekeying to authorize a new SessionAccount as the authorizing address has fees covered by an external FeeFunder account.
         assert Txn.fee() == 0
         # Validate the sender has access to the corresponding OAuth account, and that proof replay attacks are prevented. 
@@ -296,85 +279,109 @@ def SessionAccount(sig):
     else:
         # Rekeying to authorize a new SessionAccount as the authorizing address has fees covered by an external FeeFunder account.
         assert Txn.fee() == 0
-        # Validate the sender has access to the corresponding OAuth account, and that proof replay attacks are prevented.
+        # Validate the sender has access to the corresponding OAuth account, and that proof replay attacks are prevented. 
         assert hasOAuthAccountAccess(sig)
 ```
 
 #### SessionAccount Reproduction
 
-When spending from a `SessionAccount`, the LSIG program code for both the account and its *authorizing* `SessionAccount` must be reproduced (see [Rekeying in Algorand](https://developer.algorand.org/docs/get-details/accounts/rekey/)). The spending account is the base account, while the authorizing account provides authorization.
-\
-\
-Reproducing the base account involves creating a `SessionAccount` LSIG instance using the known `OAuthAccountGUID` value for the template variable and default values for the remaining variables.
-\
-\
-Reproducing the authorizing account entails using an Indexer for efficient blockchain state querying to obtain the last transaction of the known authorizing address. This data is then used to create an authorizing `SessionAccount` LSIG instance with the relevant template variables.
+The following pseudocode describes how we can reproduce a `SessionAccount` from the `OAuthAccountGUID` and `OAuthClientEntry` using an Indexer. The indexer is a tool designed to query blockchain data efficiently. With the latest transaction data at hand, one can extract the logic governing the authorizing account. Likewise, the base `SessionAccount`, which is setup after the user logs in using the `OAuthAccountGUID`, can be recreated whenever necessary as all its template variables are known. `OAuthAccountGUID` and `OAuthClientEntry` can be computed directly from the JWT, as explained above.
 
 ```python
-DefaultEphemeralKey = Bytes(16, "0xDEADBEEF")
-def GetBaseAccount(OAuthAccountGUID, CustomClaimKey='nonce', proofVerifierAddr, RSAVerifierAppId, creatorAddr):
-  return SessionAccount({TMPL_OAUTHACCOUNTGUID: OAuthAccountGUID, TMPL_EPK: DefaultEphemeralKey,
-    TMPL_EXP: 0, TMPL_CUSTOMCLAIMKEY: CustomClaimKey,
-    TMPL_PROOFVERIFIERADDR: proofVerifierAddr, TMPL_CREATORADDR: creatorAddr,  TMPL_RSAVERIFIERAPPID: RSAVerifierAppId
+defaultEphemeralKey = Bytes(16, "0xDEADBEEF")
+
+def GetBaseAccount(
+    OAuthAccountGUID,
+    TenantAuthAppId
+  ):
+  return SessionAccount({
+    TMPL_OAUTHACCOUNTGUID: OAuthAccountGUID,
+    TMPL_EPK: defaultEphemeralKey, TMPL_EXP: 0,
+    TMPL_TENANTAUTHAPPID: TenantAuthAppId
     })
 
-def GetAuthorizingAccount(OAuthAccountGUID, CustomClaimKey='nonce'):
+def GetAuthorizingAccount(
+    OAuthAccountGUID,
+    TenantAuthAppId
+  ):
   # Get the last transaction of the authorizing address
-  baseAccount = GetBaseAccount(OAuthAccountGUID)
+  baseAccount = GetBaseAccount(OAuthAccountGUID, TenantAuthAppId)
   authorizingAddress = baseAccount['auth-addr']
   lastAuthTxn = Indexer.GetLastTxn(authorizingAddress)
   if lastAuthTxn == None:
-    return GetBaseAccount(OAuthAccountGUID)
+    return GetBaseAccount(OAuthAccountGUID, TenantAuthAppId)
   # Get the template variables from the last transaction
-  epk, exp, customClaimKey, creatorAddr, proofVerifierAddr, RSAVerifierAppId = ReadTemplateVariables(lastAuthTxn)
-  return SessionAccount({TMPL_OAUTHACCOUNTGUID: OAuthAccountGUID,
-    TMPL_EPK: epk, TMPL_EXP: exp, TMPL_CUSTOMCLAIMKEY: customClaimKey,
-    TMPL_PROOFVERIFIERADDR: proofVerifierAddr, TMPL_CREATORADDR: creatorAddr,  TMPL_RSAVERIFIERAPPID: RSAVerifierAppId
+  epk, exp, customClaimKey, tenantAuthAppId = ReadTemplateVariables(lastAuthTxn)
+  return SessionAccount({
+    TMPL_OAUTHACCOUNTGUID: OAuthAccountGUID,
+    TMPL_EPK: epk, TMPL_EXP: exp,
+    TMPL_TENANTAUTHAPPID: tenantAuthAppId
     })
 
-def GetSessionAccount(OAuthAccountGUID, CustomClaimKey='nonce'):
-  return [GetBaseAccount(OAuthAccountGUID, CustomClaimKey), GetAuthorizingAccount(OAuthAccountGUID)]
+def GetSessionAccount(
+    OAuthAccountGUID,
+    TenantAuthAppId
+  ):
+  return [
+          GetBaseAccount(OAuthAccountGUID, TenantAuthAppId),
+          GetAuthorizingAccount(OAuthAccountGUID, TenantAuthAppId),
+        ]
 
-def GetNewAuthorizingSessionAccount(OAuthAccountGUID, newEpk, newExp, customClaimKey):
-    return SessionAccount({TMPL_OAUTHACCOUNTGUID: OAuthAccountGUID, TMPL_EPK: newEpk, TMPL_EXP: newExp, TMPL_CUSTOMCLAIMKEY: customClaimKey})
+def GetNewAuthorizingSessionAccount(
+      OAuthAccountGUID,
+      TenantAuthAppId,
+      epk,
+      exp
+    ):
+    return SessionAccount({
+      TMPL_OAUTHACCOUNTGUID: OAuthAccountGUID,
+      TMPL_EPK: epk, TMPL_EXP: exp,
+      TMPL_TENANTAUTHAPPID: tenantAuthAppId
+      })
 ```
 
 ### Account Creation
 
-When a user first creates a SessionAccount account, they reproduce the SessionAccount where the authorizing account must match the base account as it is yet to be rekeyed. To create a new authorized session wherein they can spend from the account with a temporary ephemeral signing key, they must first prove access to the corresponding OAuth2 account identified by `OAuthAccountGUID` that delegates temporary spending authority to their specified ephemeral key as explained in the next Section.
-
+There is nothing unique about account creation, except for the sending of a recovery email which a user can use to prove account ownership using ZK-Email for recovery purposes. The recovery process is to be refined in a future version of Zorkin, and is left as future work.
 
 ### Authorize a new Session
 
-To initiate a new session, a base SessionAccount is rekeyed to a time-bound authorizing SessionAccount. This authorization allows for access to the base account, but only through transactions signed with the associated ephemeral private key. The transaction ID used in the process is required to be verified by this signature. Authorization requires demonstrating control over a valid JWT OAuth access token, which is associated with the user's OAuth2 account identified by `OAuthAccountGUID`. The token must encode the ephemeral public key and the new authorizing SessionAccount's expiration period, indicated as 'validity rounds', within the `CustomClaimValue`.
+To initiate a new session, the procedure commences by creating a temporary, time-limited authorizing SessionAccount from a pre-existing base SessionAccount. Control over the base account is established by requiring each transaction to include a signature for the transaction ID. This ID is derived from the ephemeral private key, which pairs with the corresponding public key held in the authorizing LSIG as a template variable. To authorize the session, it is critical to provide a valid JWT OAuth access token obtained from the issuer's platform. This token is associated with the user through an `OAuthAccountGUID` and must authenticate access for the OAuth client marked by the `OAuthClientEntry`. The `OAuthClientEntry` is calculated using the Poseidon hash of the issuer and audience fields within the JWT, as well as the `CustomClaimKey`, which identifies the value in the JWT payload (`CustomClaimValue`).
+
+The `CustomClaimValue` is a hash of the ephemeral private key and its expiration timestamp. To prevent replay attacks and ensure the transaction ID's distinctiveness within its valid period, a unique random lease value is incorporated. A group transaction is executed to perform various verification operations, such as Zero-Knowledge proof checks, which collectively confirm the authorization as described in the previously defined components. There are constraints that limit our ability to combine all components; for instance, the proof verification that requires excessive operational code budgets, and the necessity for the SessionAccount to function as a standard account by representing it as an LSIG contract account, among other limitations.
 \
 \
 The procedure is the following:
-1. Create a new ED25519 keypair for the ephemeral key, with the public key `epk` and private key `esk`. Specify the expiration validity of the new authorizing SessionAccount as `exp`.
-2. Request a JWT from the OAuth2 provider, such as Google, using the OAuth2 OpenIDConnect protocol, with a `CustomClaimValue` of `Sha256(epk, exp)`. The JWT should be signed with the RSA public key `RSAPublicKey` of the OAuth2 provider.
-3. Derive the `OAuthAccountGUID` as `Poseidon(jwt.iss, jwt.aud, jwt.sub)`, where `jwt.iss` is the OAuth2 provider identifier, `jwt.aud` is the OAuth2 client identifier, and `jwt.sub` is the OAuth2 user identifier.
-4. Provide private the JWT and `RSAPublicKey` as private inputs and the public input as `MIMCHash(OAuthAccountGUID, CustomClaimKey, CustomClaimValue, RSAPublicKey)` to the prover. The prover will return a `proof` and public input `publicInput`, if the proof is valid.
-5. Reproduce the base SessionAccount and its authorizing SessionAccount using the `OAuthAccountGUID` by calling the `GetSessionAccount` function.
-6. Create a new Authorizing SessionAccount with the `epk` and `exp` using the `GetNewAuthorizingSessionAccount` function, which will be used to rekey the base SessionAccount.
-7. Submit a transaction group, called a Session Authorizing Transaction, with the following transactions:
-    - Transaction 0: An application call to `FeeFunderState` with argument specifying the address of the base SessionAccount address, from the `FeeFunder` LSIG to cover fees associated with the transaction group.
-    - Transaction 1: A self-payment of 0 to the `ProofVerifier` with the `proof` as an argument (the `publicInput` is specified in the note for communication to other transactions in the group).
-    - Transaction 2: An application call to `ValidateOAuthRSAPublicKey` of the `RSAVerifier` application with the `RSAPublicKey` provided as an application argument.
-    - Transaction 3: A rekey of the base SessionAccount to the new authorizing SessionAccount, signed by the current authorizing SessionAccount LSIG. The note is set to an array containing the values of the `CustomClaimValue` pre-image (`epk` and `exp`), and `RSAPublicKey`. A signature of the transaction Id by `esk` is added as an LSIG argument. A random lease value is provided to ensure the transaction Id is unique, and to prevent replay attacks even of the same transaction.
+1. Create a new ED25519 keypair to be used as the ephemeral key, denoting the public key as `epk` and the private key as `esk`. Define an expiration time `exp` for the new authorizing SessionAccount.
+2. Acquire a JWT from an OAuth2 provider (e.g., Google) via the OAuth2/OpenID Connect protocol. The JWT should include a `CustomClaimValue` that equals `Sha256(epk, exp)`, all signed with the provider's RSA public key (`RSAPublicKey`).
+3. Calculate the `OAuthAccountGUID` by applying the Poseidon hash to the OAuth2 provider's issuer identifier (`jwt.iss`) and the user identifier (`jwt.sub`).
+4. Compute the `OAuthClientEntry` by hashing the issuer identifier (`jwt.iss`), the OAuth2 client identifier (`jwt.aud`), and `CustomClaimKey` using the Poseidon hash.
+5. Generate a `proof` and `publicInput` by using a prover that takes the JWT `RSAPublicKey` and `CustomClaimKey` as private inputs, and `MIMCHash(OAuthAccountGUID, CustomClaimValue, RSAPublicKey, OAuthClientEntry)` as the public input.
+6. Access the base SessionAccount along with the appropriate authorizing SessionAccount by calling `GetSessionAccount` with `OAuthAccountGUID` and `OAuthClientEntry` and the application ID for `TenantAuth`.
+7. Establish a new authorizing SessionAccount using the `epk` and `exp` through the `GetNewAuthorizingSessionAccount` function, which will then update the base SessionAccount to use this new authorizing SessionAccount. Access to the base account will require the `epk` and `exp`.
+8. Arrange a set of transactions named the Session Authorizing Transaction, which comprises:
+    a. Transaction 0: An application call to `TenantAuth` to perform the `ApproveSession` function, controlled and signed by the `FeeFunder` LSIG to handle the group's fees. Provide `TenantAuth` application ID to `FeeFunder` via `TMPL_TENANTAUTHAPPID`.
+    b. Transaction 1: A zero-value payment to oneself targeting `ProofVerifier` with `proof` as the argument and `publicInput` in the note field facilitating inter-transaction communication.
+    c. Transaction 2: An application call to the `ValidateOAuthRSAPublicKey` function of the`RSAVerifier` application, including the `RSAPublicKey` as the application argument.
+    d. Transaction 3: A transaction to update the base SessionAccount with the new authorizing SessionAccount, signed by the LSIG of the current authorizing SessionAccount. This transaction note should list `epk`, `exp`, `RSAPublicKey`, `OAuthAccountGUID`, and `OAuthClientEntry`. The transaction ID, signed with `esk`, and a random lease value are used as LSIG arguments to stop replay attacks and maintain transaction distinctiveness even within the same validity range.
 
-The atomic nature of group transactions ensures failure of the entire group if any single transaction does not succeed. Concurrently, the group's successful processing confirms the sender's control over a valid JWT access token linked to the OAuth account designated by `OAuthAccountGUID`. This is evidenced by the verified proof, the signature with a verified RSA public key from the OAuth provider's JWK endpoint, and by the rekey transaction ID, which must be signed with the ephemeral private key from the JWT's `CustomClaimValue` pre-image to avoid replays. The randomness and replay protection are further assured by the utilization of a random lease value.
 
 ![CredentialCreation](./images/AuthorizingASession.png)
 
 
-### Spending within an Authorized Session
+### Transacting within an Authorized Session
 
-Once a user has authorized a new session, they can spend from the account with the `newEsk` private key until the `newExp` validity rounds have passed by providing a signature of the transaction Id by `newEsk` as an argument to the `SessionAccount` LSIG. The base SessionAccount and Authorizing SessionAccount are reproduced as explained in the previous section. Additionally the lease field is set to a random value each time, to ensure the transaction Id is unique and prevent replay attacks even for the same transaction.
+Once a session has been authorized, the user is able to perform transactions from the SessionAccount. For a transaction to be considered valid, its Id must be signed with the ephemeral private key `esk` associated with the authorizing SessionAccount. This signature is included as an input argument to the authorizing SessionAccount's LogicSig (LSIG), which then serves as the signing authority for the transaction. The completed transaction, signed by the authorizing SessionAccount LSIG, can then be submitted to the blockchain network.
 
-1. Reproduce the base SessionAccount and its authorizing SessionAccount using the `OAuthAccountGUID` by calling the `GetSessionAccount` function.
-2. Sign a spending transaction, after assigning a random value to the lease field, with the the authorizing SessionAccount with an argument of the transaction Id signed by `newEsk`.
-3. Add the transaction to a group transaction that includes an application call to `FeeFunder`, which will cover transaction fees through fee pooling.
-4. Submit the transaction to the network.
+Procedure:
+0. Calculate the `OAuthAccountGUID` by applying the Poseidon hash to the OAuth2 provider's issuer identifier (`jwt.iss`) and the user identifier (`jwt.sub`).
+1. Compute the `OAuthClientEntry` by hashing the issuer identifier (`jwt.iss`), the OAuth2 client identifier (`jwt.aud`), and `CustomClaimKey` using the Poseidon hash.
+2. Reproduce the base SessionAccount and its authorizing SessionAccount using the known `OAuthAccountGUID` and `OAuthClientEntry` by calling the `GetSessionAccount` function with these values as arguments. 
+3. Create the desired transaction from the base SessionAccount, specified in the sender field of the transaction.
+4. Assign a random value to the lease field to ensure the transaction ID is unique, and mutually exclusive until the lease expires.
+5. Sign the tranasction Id with the ephemeral private key `esk` of the authorizing SessionAccount, and add the signature as an argument to the authorizing SessionAccount LSIG.
+6. Sign the transaction with the authorizing SessionAccount LSIG.
+7. Submit the transaction to the network.
 
 
 ![NativeGeneral](./images/SigningInASession.png)
@@ -382,11 +389,11 @@ Once a user has authorized a new session, they can spend from the account with t
 
 ### Account Recovery
 
-To simplify, account recovery in Zorkin, not previously mentioned, involves adding a recovery factor to the SessionAccount for access restoration, like if a client goes offline. A proposed recovery method is using [ZK-Email](https://prove.email/) to send a recovery email at account creation. The user then verifies access to this email, linked to the SessionAccount through elements like the DKIM email signature RSA public key and their email address as template variables.
+To simplify, account recovery in Zorkin, not previously mentioned, involves adding a recovery factor to the SessionAccount for access restoration, like if a client goes offline. A proposed recovery method is using [ZK-Email](https://prove.email/) to send a recovery email at account creation. The user then verifies access to this email, linked to the SessionAccount through elements like the DKIM email signature RSA public key and a hash of their email address as template variables.
 
 ### Proof Generation Deferral
 
-Proof generation by a remote prover, which can be resource-intensive, is postponed until required for signing to optimize costs and loading times. This enhances user experience, as many dApp users, like those browsing an NFT marketplace, don't immediately transact. Once generated, a proof needs only a single verification for session establishment (i.e., rekeying), allowing subsequent spending without further proof production or verification until expiration, thereby reducing authentication fees and prover server costs.
+Proof generation by a remote prover, which can be resource-intensive, is postponed until required for signing to optimize costs and loading times. This enhances user experience, as many dApp users, like those browsing an NFT marketplace, don't necessarily transact. Once generated, a proof needs only a single verification for session establishment (i.e., rekeying), allowing subsequent spending without further proof production or verification until expiration, thereby reducing authentication fees and prover server costs.
 
 ## Differentiation & Improvements to Existing Work
 
@@ -403,159 +410,6 @@ Proof generation by a remote prover, which can be resource-intensive, is postpon
 5. **Revocation of Active Sessions**: Zorkin allows users to revoke any active session by rekeying the SessionAccount back to the base SessionAccount, either using the ephemeral key itself, or remotely making use of the hardcoded creator public key which allows only the creator to revoke the session. This is useful in the event of SessionAccount loss of access for any reason, such as a malicious takeover or simply as a safety measure to prevent long range attacks that might utilise an old unexpired Session key.
 
 These improvements focus on enhancing security, reducing costs, and offering a more adaptable and user-friendly authentication mechanism suitable for a variety of applications and authentication services.
-
-## Variant: Stateful Smart-Contract to Maintain the authorized Session
-
-This is a variant of Zorkin that maintains SessionState in the BoxStorage of a stateful SmartContract called SessionState, which allows for the creation of Authorized sessions within which the user can issue transactions from the SessionAccounnt by signing the Transction Id with the ephemeral private key if its public key is recorded in the session and is has a Last Validity that's before the recorded expiration in the BoxStorage. To account for how a SessionAccount initially has an empty balance, and to streamline authentication, fees are covered by SessionStateInvoker which is an LSIG account that is only allowed to make application calls to SessionState. Anyone can reproduce SessionStateInvoker, however it will only pass if it's calling the SessionState as expected, and that the SessionAccount involved has been registered. A SessionAccount is considered registered if it has been recorded into the session BoxStorage of SessionState, which occurs when a SessionAccount is first created. SessionState takes on the role of validating the RSA public key against a cache of known JWKs for the  OAuth2 issuer as requested from their endpoint via an MPC HTTPs request, which periodically updates the cache. As before, SessionAccount is still responsible for asserting that the expected ProofVerifier is in the group transaction and is verifying a proof against the public input whose verification would prove ownership of the linked OAuth2 account identified by OAuthAccountGUID.
-\
-The primary shortcoming of this variant is its inflexibility, as it deviates from behaving like a conventional wallet. Consequently, it may not be suitable for dApp transactions that anticipate interactions with a regular wallet and require a specific structure for group transactions.
-
-#### SessionStateInvoker
-
-An LSIG that makes application calls to the SessionState LSIG, covering fees for the entire group. It is only allowed to call the dApp, and must be topped up by the smart contract or a human in the loop to have sufficient balance to cover fees. 
-```python
-SessionStateAppId = TMPL('TMPL_SESSIONSTATEAPPID')
-# LSIG Entry point
-def SessionStateInvoker():
-  # Should only ever call the SessionState application. Assert this is the case.
-  assert Txn.type == 'appl'
-  assert Txn.appId == SessionStateAppId
-  # Assert it's calling either UpdateSession or HasActiveSession, and react accordingly
-  if Txn.appArgs[0] == 'UpdateSession':
-    # UpdateSession requires a fee of 3 microAlgos, covering all authentication fees involved
-    assert Txn.fee() == 3 * Global.MinTxnFee
-  elif Txn.appArgs[0] == 'HasActiveSession':
-    # When asserting SessionAccount is authorized to transact in an authorized session, another sender covers the fees
-    assert Txn.fee() == 0
-  else:
-    Reject()
-```
-
-#### SessionState
-
-```python
-# State management using BoxStorage
-BoxStorage session
-BoxStorage issuerRSAPublicKeys
-string issuer
-string MPCHTTPSClientAddress
-string MPCHTTPSClientChain
-
-# Function to update the session data for an existing SessionAccount
-def UpdateSession():
-  # Retrieve the session update transaction, assuming it's the second in the group (index 1)
-  sessionUpdateTxn := Gtxn[1]
-  # Verify that it's a zero-amount payment transaction from the SessionAccount to itself
-  assert sessionUpdateTxn.type == "pay"
-  assert sessionUpdateTxn.amount == 0
-  assert sessionUpdateTxn.receiver == sessionUpdateTxn.sender
-  # Check that the SessionAccount has previously been registered
-  assert session.has(sessionUpdateTxn.sender)
-  # Extract the ephemeral public key (Epk), expiration time (Exp), and RSA public key from the note field
-  Epk, Exp, RSAPublicKey := sessionUpdateTxn.note()
-  # Update the session data in the BoxStorage with the new details
-  session[sessionUpdateTxn.sender] = [Epk, Exp]
-  # Ensure that the RSA public key matches one of the keys provided by the issuer
-  assert issuerRSAPublicKeys[issuer].has(RSAPublicKey)
-
-# Function to check if there is an active session for the SessionAccount based on the ephemeral signature (EskSig)
-def HasActiveSession(EskSig):
-  # Ensure there are at least two transactions in the group
-  assert Global.group_size >= 2
-  # Retrieve the payment transaction from the SessionAccount, assumed to be second in the group (index 1)
-  sessionAccountTxn := Gtxn[Global.group_index + 1]
-  # Check that the SessionAccount is registered
-  assert session.has(sessionAccountTxn.sender)
-  # Fetch the session details (Epk, Exp) for the sender, which is the SessionAccount
-  Epk, Exp := session[sessionAccountTxn.sender]
-  # Verify that EskSig is a valid signature for the transaction ID using the ephemeral public key (Epk)
-  assert ED25519_Verify(sessionAccountTxn.id, EskSig, Epk)
-  # Ensure the current transaction timestamp is earlier than the session expiration time (Exp)
-  assert sessionAccountTxn.last_valid < Exp
-
-# Function to update the cache of RSA public keys for the OAuth issuer
-def UpdateOAuthJWKSCache(VAAMessage):
-  # Verify the message's validity from Wormhole's core module
-  assert Wormhole.Core.MessageIsValid(VAAMessage)
-  # Check if the sender and source chain match the expected MPC HTTPS client and chain
-  assert VAAMessage.sender == MPCHTTPSClientAddress
-  assert VAAMessage.source_chain == MPCHTTPSClientChain
-  # Update the JWK cache with the new set of keys from the message
-  keys := VAAMessage.keys
-  issuer := VAAMessage.issuer
-  issuerRSAPublicKeys[issuer] = keys
-
-# Function to register a new SessionAccount
-def RegisterSessionAccount(sessionAccountAddr):
-  # Assert the sender is the Creator of this applciation
-  assert Txn.sender == AppParam.creator(0)
-  # Add the SessionAccount address to the BoxStorage with an initial empty state
-  session[sessionAccountAddr] = []
-
-# Function to deregister an existing SessionAccount
-def DeregisterSessionAccount(sessionAccountAddr):
-  # Assert the sender is the Creator of this applciation
-  assert Txn.sender == AppParam.creator(0)
-  # Remove the SessionAccount address from the BoxStorage
-  delete session[sessionAccountAddr]
-```
-
-#### Modified SessionAccount
-```python
-CustomClaimKey = TMPL('TMPL_CUSTOMCLAIMKEY')
-OAuthAccountGUID = TMPL('TMPL_OAUTHACCOUNTGUID')
-SessionStateAppId = TMPL('TMPL_SESSIONSTATEAPPID')
-ProofVerifierAddr = TMPL('TMPL_PROOFVERIFIERADDR')
-
-# Validates the JWT proof for OAuthAccountGUID ownership
-def validJWTProof():
-    assert Txn.type == "pay"  # The transaction should be a payment type
-    assert Global.group_size == 3  # Ensure there are three transactions in the group
-    assert Txn.group_index == 1  # This transaction must be the second in the group
-    
-    # Extract parameters from the note field expected to be formatted as [Epk, Exp, RSAPublicKey, Sig]
-    (Epk, Exp, RSAPublicKey, Sig) = Txn.note()
-    
-    # Sha256 hash of Epk and Exp to produce the CustomClaimValue
-    CustomClaimValue = Sha256(Txn.note().Epk, Txn.note().Exp)
-    
-    # The public input is a MiMC hash of the OAuthAccountGUID, CustomClaimKey, CustomClaimValue, and RSAPublicKey
-    PublicInput = MIMCHash(OAuthAccountGUID, CustomClaimKey, CustomClaimValue, RSAPublicKey)
-    
-    # Ensure the third transaction in the group is from the ProofVerifierAddr with the expected PublicInput
-    assert Gtxn[2].sender == ProofVerifierAddr
-    assert Gtxn[2].note() == PublicInput  # Assuming the note holds the public input
-    
-    # Check that the transaction ID is signed with the provided signature and ephemeral public key
-    assert ED25519_Verify(Txn.id, Sig, Epk)
-    # Check that the current time is before the expiration time from the note field
-    assert Global.latest_timestamp < Exp
-
-# Logic Signature entry point for the SessionAccount
-def SessionAccount():
-    # Verify that the previous transaction is an application call to the SessionState with the correct AppId
-    assert Gtxn[Txn.group_index - 1].type == 'appl'
-    assert Gtxn[Txn.group_index - 1].application_id == SessionStateAppId
-    
-    # Retrieve the name of the session state function being called from the application args
-    sessionStateFcnName = Gtxn[Txn.group_index - 1].application_args[0]
-    
-    # If update session function is being called within the SessionState smart contract
-    if sessionStateFcnName == 'UpdateSession':
-        # Ensure that this transaction does not pay fees (fees are covered by another transaction in the group)
-        assert Txn.fee == 0
-        # Validate the proof to update the session, assuming SessionState will handle session updates
-        validJWTProof()
-    
-    # If checking for an active session within the SessionState smart contract
-    elif sessionStateFcnName == 'HasActiveSession':
-        # Approve the transaction if an active session is present, handled by SessionState verification
-        Approve()
-    
-    # Reject in all other cases
-    else:
-        Reject()
-```
 
 ## Future Work
 
