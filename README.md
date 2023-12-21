@@ -209,10 +209,10 @@ To mitigate replay attacks, verification incorporates signing with a one-time-us
 ```python
 # Define constants and templates.
 DefaultEphemeralKey = Bytes(16, "0xDEADBEEF")
-ExpTemplate = TMPL('EXP')
-EpkTemplate = TMPL('EPK')
-CustomClaimKeyTemplate = TMPL('CUSTOMCLAIMKEY')
-OAuthAccountGUIDTemplate = TMPL('OAUTHACCOUNTGUID')
+ExpTemplate = TMPL('TMPL_EXP')
+EpkTemplate = TMPL('TMPL_EPK')
+CustomClaimKeyTemplate = TMPL('TMPL_CUSTOMCLAIMKEY')
+OAuthAccountGUIDTemplate = TMPL('TMPL_OAUTHACCOUNTGUID')
 string ProofVerifierAddr # Hardcoded Address of the verifier LSIG
 string RSAVerifierAppId # Hardcoded App ID of the RSA Verifier
 
