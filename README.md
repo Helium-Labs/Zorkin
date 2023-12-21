@@ -215,9 +215,9 @@ ExpTemplate = TMPL('TMPL_EXP')
 EpkTemplate = TMPL('TMPL_EPK')
 CustomClaimKeyTemplate = TMPL('TMPL_CUSTOMCLAIMKEY')
 OAuthAccountGUIDTemplate = TMPL('TMPL_OAUTHACCOUNTGUID')
-string ProofVerifierAddr # Hardcoded Address of the verifier LSIG
-string RSAVerifierAppId # Hardcoded App ID of the RSA Verifier
-string CreatorAddr # Hardcoded Address of the Zorkin user that created this LSIG Account for one of their users
+ProofVerifierAddrTemplate = TMPL('TMPL_PROOFVERIFIERADDR') # Hardcoded Address of the verifier LSIG
+RSAVerifierAppIdTemplate = TMPL('TMPL_RSAVERIFIERAPPID') # Hardcoded Address of the verifier LSIG
+CreatorAddrTemplate = TMPL('TMPL_CREATORADDR') # Hardcoded Address of the Zorkin user that created this LSIG Account for one of their users
 
 # Define a function to validate the JWT proof.
 def hasOAuthAccountAccess(sig):
@@ -237,7 +237,7 @@ def hasOAuthAccountAccess(sig):
 
     # Verify the JWT signature with the issuer's public key registered at the RSAVerifierApp.
     RSAVerifierTxn = Gtxn[2]
-    assert RSAVerifierTxn.application_id == RSAVerifierAppId
+    assert RSAVerifierTxn.application_id == RSAVerifierAppIdTemplate
     assert RSAVerifierTxn.application_args[0] == "ValidateOAuthRSAPublicKey"
     assert RSAVerifierTxn.application_args[1] == RSAPublicKey
 
@@ -245,7 +245,7 @@ def hasOAuthAccountAccess(sig):
     CustomClaimValue = Sha256(epk, exp)
     PublicInput = MIMCHash(OAuthAccountGUIDTemplate, CustomClaimKeyTemplate, CustomClaimValue, RSAPublicKey)
     proofVerifierTxn = Gtxn[1]
-    assert proofVerifierTxn.sender == ProofVerifierAddr
+    assert proofVerifierTxn.sender == ProofVerifierAddrTemplate
     assert proofVerifierTxn.note == PublicInput
 
     # Verify that the ephemeral key signs the transaction ID to prevent proof replay attacks.
@@ -275,7 +275,7 @@ def SessionAccount(sig):
     """
     
     # Case: Revocation of any active session to the base account
-    if ED25519_Verify(sig, Txn.transaction_id, CreatorAddr):
+    if ED25519_Verify(sig, Txn.transaction_id, CreatorAddrTemplate):
         # Assert the creator is only attempting to revoke any active session
         assert creatorIsOnlyRevokingActiveSession()
 
@@ -312,8 +312,11 @@ Reproducing the authorizing account entails using an Indexer for efficient block
 
 ```python
 DefaultEphemeralKey = Bytes(16, "0xDEADBEEF")
-def GetBaseAccount(OAuthAccountGUID, CustomClaimKey='nonce'):
-  return SessionAccount({TMPL_OAUTHACCOUNTGUID: OAuthAccountGUID, TMPL_EPK: DefaultEphemeralKey, TMPL_EXP: 0, TMPL_CUSTOMCLAIMKEY: CustomClaimKey})})
+def GetBaseAccount(OAuthAccountGUID, CustomClaimKey='nonce', proofVerifierAddr, RSAVerifierAppId, creatorAddr):
+  return SessionAccount({TMPL_OAUTHACCOUNTGUID: OAuthAccountGUID, TMPL_EPK: DefaultEphemeralKey,
+    TMPL_EXP: 0, TMPL_CUSTOMCLAIMKEY: CustomClaimKey,
+    TMPL_PROOFVERIFIERADDR: proofVerifierAddr, TMPL_CREATORADDR: creatorAddr,  TMPL_RSAVERIFIERAPPID: RSAVerifierAppId
+    })
 
 def GetAuthorizingAccount(OAuthAccountGUID, CustomClaimKey='nonce'):
   # Get the last transaction of the authorizing address
@@ -323,8 +326,11 @@ def GetAuthorizingAccount(OAuthAccountGUID, CustomClaimKey='nonce'):
   if lastAuthTxn == None:
     return GetBaseAccount(OAuthAccountGUID)
   # Get the template variables from the last transaction
-  epk, exp, customClaimKey = ReadTemplateVariables(lastAuthTxn)
-  return SessionAccount({TMPL_OAUTHACCOUNTGUID: OAuthAccountGUID, TMPL_EPK: epk, TMPL_EXP: exp, TMPL_CUSTOMCLAIMKEY: customClaimKey})
+  epk, exp, customClaimKey, creatorAddr, proofVerifierAddr, RSAVerifierAppId = ReadTemplateVariables(lastAuthTxn)
+  return SessionAccount({TMPL_OAUTHACCOUNTGUID: OAuthAccountGUID,
+    TMPL_EPK: epk, TMPL_EXP: exp, TMPL_CUSTOMCLAIMKEY: customClaimKey,
+    TMPL_PROOFVERIFIERADDR: proofVerifierAddr, TMPL_CREATORADDR: creatorAddr,  TMPL_RSAVERIFIERAPPID: RSAVerifierAppId
+    })
 
 def GetSessionAccount(OAuthAccountGUID, CustomClaimKey='nonce'):
   return [GetBaseAccount(OAuthAccountGUID, CustomClaimKey), GetAuthorizingAccount(OAuthAccountGUID)]
