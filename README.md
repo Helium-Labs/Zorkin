@@ -30,9 +30,9 @@
 
 - Given that the association between a user and an OAuth2 client application can change over time, it is crucial to have a reliable and decentralized method for account recovery. To address this, the recovery mechanism, ZK-Email, is leveraged at the time of user registration. Using ZK-Email, if a user loses access to their account, they can prove ownership by demonstrating that they have access to a specific recovery email address that was initially used during the sign-up process. ZK-Email utilizes zero-knowledge proof technology to allow users to authenticate their email ownership without revealing sensitive information.
 
-#### Revocation of an Active Session
+#### Authorized Session Revocation
 
-Client-side revocation can be achieved by rekeying to the base account once in an authorized session. Remote revocation is only possible in a stateful variant of the solution, that's explored in a later section.
+The SessionAccount has a template variable for a public key of a key held by the user of the Zorkin service, which allows them to revoke any active session by rekeying the SessionAccount back to the base SessionAccount. This is useful in the event of SessionAccount loss of access for any reason, such as a malicious takeover or simply as a safety measure to prevent long range attacks that might utilise an old unexpired Session key.
 
 #### Proof Generation Deferral
 
@@ -50,7 +50,9 @@ Client-side revocation can be achieved by rekeying to the base account once in a
 
 4. **Enhanced Flexibility with Authentication Providers**: Existing systems often depend on the ability to define a 'nonce' claim during the OAuth2 request to set up the ephemeral key. This presents a limitation because not all authentication solutions—like Firebase—allow programmatic control over user-definable claims. Zorkin's implementation uses a `CustomClaim`, which is a more flexible approach that is not restricted to a specific claim like 'nonce'. Hence, Zorkin's design allows it to work with a broader range of authentication providers that may not offer the same level of claim customization.
 
-These improvements focus on enhancing security, reducing costs, and offering a more adaptable and user-friendly authentication mechanism suitable for a variety of applications and authentication services.
+5. **Revocation of Active Sessions**: Zorkin allows users to revoke any active session by rekeying the SessionAccount back to the base SessionAccount, either using the ephemeral key itself, or remotely making use of the hardcoded creator public key which allows only the creator to revoke the session. This is useful in the event of SessionAccount loss of access for any reason, such as a malicious takeover or simply as a safety measure to prevent long range attacks that might utilise an old unexpired Session key.
+
+These improvements focus on enhancing security, reducing costs, and offering a more adaptable and user-friendly Zero-Knowledge self-custodial authentication mechanism suitable for a variety of applications and authentication services.
 
 
 #### Stateful Smart Contract Variant
@@ -215,6 +217,7 @@ CustomClaimKeyTemplate = TMPL('TMPL_CUSTOMCLAIMKEY')
 OAuthAccountGUIDTemplate = TMPL('TMPL_OAUTHACCOUNTGUID')
 string ProofVerifierAddr # Hardcoded Address of the verifier LSIG
 string RSAVerifierAppId # Hardcoded App ID of the RSA Verifier
+string CreatorAddr # Hardcoded Address of the Zorkin user that created this LSIG Account for one of their users
 
 # Define a function to validate the JWT proof.
 def hasOAuthAccountAccess(sig):
@@ -226,7 +229,7 @@ def hasOAuthAccountAccess(sig):
     """
     # Confirm rekeying to SessionAccount with new EPK and EXP values tied to the OAuthAccountGUID.
     assert Txn.type == "rekey"
-    assert Global.groupSize == 4
+    assert Txn.groupSize == 4
     assert Txn.groupIndex == 3
 
     # Retrieve pre-image parameters from the transaction note.
@@ -253,6 +256,16 @@ def hasOAuthAccountAccess(sig):
     # If all conditions are satisfied, the JWT proof is valid.
     return True
 
+# Assert that the creator is only attempting to revoke any active by rekeying the SessionAccount back to the root base SessionAccount
+def creatorIsOnlyRevokingActiveSession():
+    assert Txn.type == "rekey"
+    # Tnx.sender is the address of the initial SessionAccount
+    assert Txn.rekeyTo == Txn.sender
+    # Assert the fee is the exact amount
+    assert Txn.fee() == 1 * Global.MinTxnFee
+    # Assert there's only one transaction in the group
+    assert Txn.groupSize == 1
+
 # Entry point for LSIG (Logic Signature) execution.
 def SessionAccount(sig):
     """
@@ -261,6 +274,11 @@ def SessionAccount(sig):
     This function determines whether a transaction is approved based on the session state.
     """
     
+    # Case: Revocation of any active session to the base account
+    if ED25519_Verify(sig, Txn.transaction_id, CreatorAddr):
+        # Assert the creator is only attempting to revoke any active session
+        assert creatorIsOnlyRevokingActiveSession()
+
     # Case: Base state, representing first session creation
     if EpkTemplate == DefaultEphemeralKey:
         # Rekeying to authorize a new SessionAccount as the authorizing address has fees covered by an external FeeFunder account.
@@ -375,6 +393,8 @@ Proof generation by a remote prover, which can be resource-intensive, is postpon
 3. **Deferred Proof Generation**: In line with providing a better user experience, Zorkin defers the generation of cryptographic proofs until the point when they are actually needed, such as when authorizing transactions. This approach relieves the server from the computational demands of generating proofs for every user upon log-in, especially beneficial when many users may not engage in transactions immediately. By deferring this intensive process, Zorkin ensures faster application loading times and optimizes resource utilization.
 
 4. **Enhanced Flexibility with Authentication Providers**: Existing systems often depend on the ability to define a 'nonce' claim during the OAuth2 request to set up the ephemeral key. This presents a limitation because not all authentication solutions—like Firebase—allow programmatic control over user-definable claims. Zorkin's implementation uses a `CustomClaim`, which is a more flexible approach that is not restricted to a specific claim like 'nonce'. Hence, Zorkin's design allows it to work with a broader range of authentication providers that may not offer the same level of claim customization.
+
+5. **Revocation of Active Sessions**: Zorkin allows users to revoke any active session by rekeying the SessionAccount back to the base SessionAccount, either using the ephemeral key itself, or remotely making use of the hardcoded creator public key which allows only the creator to revoke the session. This is useful in the event of SessionAccount loss of access for any reason, such as a malicious takeover or simply as a safety measure to prevent long range attacks that might utilise an old unexpired Session key.
 
 These improvements focus on enhancing security, reducing costs, and offering a more adaptable and user-friendly authentication mechanism suitable for a variety of applications and authentication services.
 
