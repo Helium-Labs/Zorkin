@@ -55,7 +55,7 @@ These improvements focus on enhancing security, reducing costs, and offering a m
 
 #### Stateful Smart Contract Variant
 
-- Rather than repeatedly rekeying the `SessionAccount` to manage authorized sessions, a more straightforward approach is to use an external stateful smart contract to keep track of session data. This alternative method would store session information in what's typically referred to as "box storage", a term used in the context of this text to describe the storage system utilized by the smart contract. However, regardless of the session management strategy chosen, it's essential to define the `SessionAccount` as a Logic Signature (also known as a smart signature). The Logic Signature is a key component that allows the `SessionAccount` to function in a manner similar to a standard Algorand wallet. Without it, the account would not have the flexibility required for general use, as smart contracts on their own cannot perform all actions of a wallet and have certain constraints that could prove restrictive. The Logic Signature essentially gives the `SessionAccount` the capability to authorize transactions in a secure and programmable way, ensuring that it adheres to the predefined rules embedded within it.
+- Rather than repeatedly rekeying the `SessionAccount` to manage authorized sessions, a more straightforward approach is to use an external stateful smart contract to keep track of session data. This alternative method would store session information in what's typically referred to as "box storage", a term used in the context of this text to describe the storage system utilized by the smart contract. However, regardless of the session management strategy chosen, it's essential to define the `SessionAccount` as a Logic Signature (also known as a smart signature). The Logic Signature is a key component that allows the `SessionAccount` to function in a manner similar to a standard Algorand wallet. Without it, the account would not have the flexibility required for general use, as smart contracts on their own cannot perform all actions of a wallet and have certain constraints that could prove restrictive. The Logic Signature essentially gives the `SessionAccount` the capability to authorize transactions in a secure and programmable way, ensuring that it adheres to the predefined rules embedded within it. The primary shortcoming of this variant is its inflexibility, as it deviates from behaving like a conventional wallet. Consequently, it may not be suitable for dApp transactions that anticipate interactions with a regular wallet and require a specific structure for group transactions.
 
 ## Method
 
@@ -289,102 +289,152 @@ These improvements focus on enhancing security, reducing costs, and offering a m
 
 ## Variant: Stateful Smart-Contract to Maintain the authorized Session
 
-In this variant, session management and fee coverage are handled by a stateful smart contract called `SessionState`, eliminating the need for frequent rekeying of the `SessionAccount`. Here's a concise explanation:
+This is a variant of Zorkin that maintains SessionState in the BoxStorage of a stateful SmartContract called SessionState, which allows for the creation of Authorized sessions within which the user can issue transactions from the SessionAccounnt by signing the Transction Id with the ephemeral private key if its public key is recorded in the session and is has a Last Validity that's before the recorded expiration in the BoxStorage. To account for how a SessionAccount initially has an empty balance, and to streamline authentication, fees are covered by SessionStateInvoker which is an LSIG account that is only allowed to make application calls to SessionState. Anyone can reproduce SessionStateInvoker, however it will only pass if it's calling the SessionState as expected, and that the SessionAccount involved has been registered. A SessionAccount is considered registered if it has been recorded into the session BoxStorage of SessionState, which occurs when a SessionAccount is first created. SessionState takes on the role of validating the RSA public key against a cache of known JWKs for the  OAuth2 issuer as requested from their endpoint via an MPC HTTPs request, which periodically updates the cache. As before, SessionAccount is still responsible for asserting that the expected ProofVerifier is in the group transaction and is verifying a proof against the public input whose verification would prove ownership of the linked OAuth2 account identified by OAuthAccountGUID.
+\
+The primary shortcoming of this variant is its inflexibility, as it deviates from behaving like a conventional wallet. Consequently, it may not be suitable for dApp transactions that anticipate interactions with a regular wallet and require a specific structure for group transactions.
 
-1. **Session Management**: The `SessionState` smart contract stores and updates session information after a user has authenticated using the same `OAuthAccountGUID` proof of access method.
+#### SessionStateInvoker
 
-2. **Fee Coverage**: `SessionState` uses fee pooling to pay transaction fees for users, simplifying transactions and improving the user experience.
+An LSIG that makes application calls to the SessionState LSIG, covering fees for the entire group. It is only allowed to call the dApp, and must be topped up by the smart contract or a human in the loop to have sufficient balance to cover fees. 
+```python
+SessionStateAppId = TMPL('TMPL_SESSIONSTATEAPPID')
+# LSIG Entry point
+def SessionStateInvoker():
+  # Should only ever call the SessionState application. Assert this is the case.
+  assert Txn.type == 'appl'
+  assert Txn.appId == SessionStateAppId
+  # Assert it's calling either UpdateSession or HasActiveSession, and react accordingly
+  if Txn.appArgs[0] == 'UpdateSession':
+    # UpdateSession requires a fee of 3 microAlgos, covering all authentication fees involved
+    assert Txn.fee() == 3 * Global.MinTxnFee
+  elif Txn.appArgs[0] == 'HasActiveSession':
+    # When asserting SessionAccount is authorized to transact in an authorized session, another sender covers the fees
+    assert Txn.fee() == 0
+  else:
+    Reject()
+```
 
-3. **JWT Verification**: The smart contract also verifies JWT signatures by comparing them with a cache of issuer’s JWKs.
-
-4. **Simplified LSIG**: The `SessionAccount` LSIG's role is reduced to checking transactions are grouped with `SessionState`, thereby handling user asset transactions with minimal logic. 
-
-This design streamlines the dApp by centralizing session state, fee management, and authentication in the `SessionState` smart contract, thus simplifying the transaction process.
-
-#### Session State
+#### SessionState
 
 ```python
+# State management using BoxStorage, a construct analogous to Algorand's key-value pair storage
 BoxStorage session
 BoxStorage issuerRSAPublicKeys
 string issuer
 string MPCHTTPSClientAddress
 string MPCHTTPSClientChain
 
+# Function to update the session data for an existing SessionAccount
 def UpdateSession():
-  # Assume the transaction in the next slot is where transactions from SessionAccount will be
-  sessionAccountTxn := Gtxn[Txn.group_index+1]
-  # Assert the SessionAccount is registered. A registered session account will have a key in the session box storage.
-  assert session.has(sessionAccountTxn.sender)
-  # Extract the session parameters from the accounts note, and update the session state
-  Epk, Exp, RSAPublicKey := ExtractSessionParameters(sessionAccountTxn.note())
-  session[sessionAccount] = [Epk, Exp]
-  # Assert the RSAPublicKey is authentic
+  # Retrieve the session update transaction, assuming it's the second in the group (index 1)
+  sessionUpdateTxn := Gtxn[1]
+  # Verify that it's a zero-amount payment transaction from the SessionAccount to itself
+  assert sessionUpdateTxn.type == "pay"
+  assert sessionUpdateTxn.amount == 0
+  assert sessionUpdateTxn.receiver == sessionUpdateTxn.sender
+  # Check that the SessionAccount has previously been registered
+  assert session.has(sessionUpdateTxn.sender)
+  # Extract the ephemeral public key (Epk), expiration time (Exp), and RSA public key from the note field
+  Epk, Exp, RSAPublicKey := sessionUpdateTxn.note()
+  # Update the session data in the BoxStorage with the new details
+  session[sessionUpdateTxn.sender] = [Epk, Exp]
+  # Ensure that the RSA public key matches one of the keys provided by the issuer
   assert issuerRSAPublicKeys[issuer].has(RSAPublicKey)
 
-def HasActiveSession():
-  # Assume the transaction in the next slot is where transactions from SessionAccount will be
+# Function to check if there is an active session for the SessionAccount based on the ephemeral signature (EskSig)
+def HasActiveSession(EskSig):
+  # Ensure there are at least two transactions in the group
   assert Global.group_size >= 2
-  sessionAccountTxn := Gtxn[Txn.group_index+1]
-  # Assert the sessionAccount is registered
+  # Retrieve the payment transaction from the SessionAccount, assumed to be second in the group (index 1)
+  sessionAccountTxn := Gtxn[Global.group_index + 1]
+  # Check that the SessionAccount is registered
   assert session.has(sessionAccountTxn.sender)
-  # Get the session parameters
+  # Fetch the session details (Epk, Exp) for the sender, which is the SessionAccount
   Epk, Exp := session[sessionAccountTxn.sender]
-  # Assert signature of the transaction Id from the SessionAccount by the private key to Epk is provided
-  # The signature is supplied in the note field of the sessionAccountTxn
-  assert ED25519_Verify(sessionAccountTxn.id, sessionAccountTxn.note(), Epk)
-  # Assert the session is unexpired
-  assert sessionAccountTxn.lastValidity < Exp
+  # Verify that EskSig is a valid signature for the transaction ID using the ephemeral public key (Epk)
+  assert ED25519_Verify(sessionAccountTxn.id, EskSig, Epk)
+  # Ensure the current transaction timestamp is earlier than the session expiration time (Exp)
+  assert sessionAccountTxn.last_valid < Exp
 
-def UpdateRSAKeyCache(VAAMessage):
-  # Asserts the validity of the message received from Wormhole's core module
+# Function to update the cache of RSA public keys for the OAuth issuer
+def UpdateOAuthJWKSCache(VAAMessage):
+  # Verify the message's validity from Wormhole's core module
   assert Wormhole.Core.MessageIsValid(VAAMessage)
-  # Assert the sender is the MPC Verifier, from the expected chain
+  # Check if the sender and source chain match the expected MPC HTTPS client and chain
   assert VAAMessage.sender == MPCHTTPSClientAddress
-  assert VAAMessage.SourceChain == MPCHTTPSClientChain
-  # Update the JWK keystore cache with the most recent JWK set for the issuer
+  assert VAAMessage.source_chain == MPCHTTPSClientChain
+  # Update the JWK cache with the new set of keys from the message
   keys := VAAMessage.keys
   issuer := VAAMessage.issuer
   issuerRSAPublicKeys[issuer] = keys
+
+# Function to register a new SessionAccount
+def RegisterSessionAccount(sessionAccountAddr):
+  # Add the SessionAccount address to the BoxStorage with an initial empty state
+  session[sessionAccountAddr] = []
+
+# Function to deregister an existing SessionAccount
+def DeregisterSessionAccount(sessionAccountAddr):
+  # Remove the SessionAccount address from the BoxStorage
+  delete session[sessionAccountAddr]
 ```
 
 #### Modified SessionAccount
-
 ```python
 CustomClaimKey = TMPL('TMPL_CUSTOMCLAIMKEY')
 OAuthAccountGUID = TMPL('TMPL_OAUTHACCOUNTGUID')
 SessionStateAppId = TMPL('TMPL_SESSIONSTATEAPPID')
+ProofVerifierAddr = TMPL('TMPL_PROOFVERIFIERADDR')
 
-def validJWTProof(sig):
-    assert Txn.note == OAuthAccountGUID
-    assert Txn.type == "rekey"
-    assert Global.groupSize == 4
-    assert Txn.groupIndex == 2
-    # Verify the Proof & its correspondence to this SessionAccount
-    Epk, Exp, RSAPublicKey = Txn.note()
-    CustomClaimValue = Sha256(Epk, Exp)
+# Validates the JWT proof for OAuthAccountGUID ownership
+def validJWTProof():
+    assert Txn.note == OAuthAccountGUID  # Ensure note field contains the OAuthAccountGUID
+    assert Txn.type == "pay"  # The transaction should be a payment type
+    assert Global.group_size == 3  # Ensure there are three transactions in the group
+    assert Txn.group_index == 1  # This transaction must be the second in the group
+    
+    # Extract parameters from the note field expected to be formatted as [Epk, Exp, RSAPublicKey, Sig]
+    (Epk, Exp, RSAPublicKey, Sig) = Txn.note()
+    
+    # Sha256 hash of Epk and Exp to produce the CustomClaimValue
+    CustomClaimValue = Sha256(Txn.note().Epk, Txn.note().Exp)
+    
+    # The public input is a MiMC hash of the OAuthAccountGUID, CustomClaimKey, CustomClaimValue, and RSAPublicKey
     PublicInput = MIMCHash(OAuthAccountGUID, CustomClaimKey, CustomClaimValue, RSAPublicKey)
-    assert Gtxn[0].sender == ProofVerifierAddr
-    assert Gtxn[0].note == PublicInput
-    # Assert the transaction Id was signed with the private ephemeral key, and that it's unexpired 
-    assert ED25519_Verify(sig, Txn.id, Epk)
-    assert Exp < Txn.lastValidity
+    
+    # Ensure the third transaction in the group is from the ProofVerifierAddr with the expected PublicInput
+    assert Gtxn[2].sender == ProofVerifierAddr
+    assert Gtxn[2].note() == PublicInput  # Assuming the note holds the public input
+    
+    # Check that the transaction ID is signed with the provided signature and ephemeral public key
+    assert ED25519_Verify(Txn.id, Sig, Epk)
+    # Check that the current time is before the expiration time from the note field
+    assert Global.latest_timestamp < Exp
 
-# LSIG Entry point
-def SessionAccount(sig):
-    assert fee == 0
-    # Assert previous transaction is an application call SessionState with AppId SessionStateAppId
-    assert Gtxn[Txn.group_index-1].type == 'appl'
-    assert Gtxn[Txn.group_index-1].appId == SessionStateAppId
-    sessionStateFcnName := Gtxn[Txn.group_index-1].appArgs[0] 
-    If sessionStateFcnName == 'UpdateSession':
-      # We're attempting to update the session by proving OAuthAccountGUID account ownership with ZK-SNARKs
-      # Assert the proof is valid; SessionState will handle the rest
-      assert validJWTProof(sig)
-    Else If sessionStateFcnName == 'HasActiveSession':
-      # We're attempting to send a transaction within an authorized session. SessionState will handle all verifications.
-      Approve()
-    # Every other case is invalid
-    Reject()
+# Logic Signature entry point for the SessionAccount
+def SessionAccount():
+    # Verify that the previous transaction is an application call to the SessionState with the correct AppId
+    assert Gtxn[Txn.group_index - 1].type == 'appl'
+    assert Gtxn[Txn.group_index - 1].application_id == SessionStateAppId
+    
+    # Retrieve the name of the session state function being called from the application args
+    sessionStateFcnName = Gtxn[Txn.group_index - 1].application_args[0]
+    
+    # If update session function is being called within the SessionState smart contract
+    if sessionStateFcnName == 'UpdateSession':
+        # Ensure that this transaction does not pay fees (fees are covered by another transaction in the group)
+        assert Txn.fee == 0
+        # Validate the proof to update the session, assuming SessionState will handle session updates
+        validJWTProof()
+    
+    # If checking for an active session within the SessionState smart contract
+    elif sessionStateFcnName == 'HasActiveSession':
+        # Approve the transaction if an active session is present, handled by SessionState verification
+        Approve()
+    
+    # Reject in all other cases
+    else:
+        Reject()
 ```
 
 ## Future Work
