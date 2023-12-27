@@ -1,10 +1,7 @@
-# Zorkin: Self-Custodial Blockchain Account Access with Zero-Knowledge Methods
-
+# Zorkin: OpenIDConnect for accessing a Self-Custodial Blockchain Account with ZK-SNARKs
 <p align="center">
   <img src="./Logo.png" alt="Logo" style="max-height:200px;">
 </p>
-
-# OpenIDConnect for accessing a Self-Custodial Blockchain Account with ZK-SNARKs
 
 ## Introduction
 
