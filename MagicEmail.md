@@ -1,10 +1,8 @@
-# Zorkin: Self-Custodial Account Access with Zero-Knowledge Methods
+# Zorkin: Magic Link Web3 Successor - Magic Email
 
 <p align="center">
   <img src="./Logo.png" alt="Logo" style="max-height:200px;">
 </p>
-
-# Magic Link Web3 Successor: Magic Email
 
 Functions just like a [Magic Link](https://auth0.com/docs/authenticate/passwordless/authentication-methods/email-magic-link) for authentication; instead of typing in a code, you just reply to the email if you accept the request to initiate a session for the specified duration. The initiated session gives you access to a self-custodial blockchain account, with exclusive access given to the authenticated user through the ephemeral private key, which is a session parameter that stays within the application client. We refer to this self-custodial wallet access method as *Magic Email*.
 
