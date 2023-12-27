@@ -3,7 +3,7 @@
   <img src="./Logo.png" alt="Logo" style="max-height:200px;">
 </p>
 
-Zorkin covers a range of low-friction authentication methods to access self-custodial blockchain accounts, mostly leveraging ZK-SNARKs. This document covers using OpenIDConnect, and the [Magic Email](./MagicEmail.md) document covers how to leverage the DKIM protocol of email to create a ZK equivalent to the popular magic link authentication method to access a self-custodial wallet tied to a users email. All rights reserved, with copyright, the works of Zorkin make several novel contributions. There is an intent to turn Zorkin into a business.
+Zorkin covers a range of low-friction authentication methods to access self-custodial blockchain accounts, mostly leveraging ZK-SNARKs. This document covers using OpenIDConnect, and the [Magic Email](./MagicEmail.md) document covers how to leverage the DKIM protocol of email to create a ZK equivalent to the popular magic link authentication method to access a self-custodial wallet tied to a users email. **All rights reserved, with copyright, the works of Zorkin make several novel contributions with the Intellectual Property owned by Zorkin and its affiliates (Winton Nathan-Roberts).** There is an intent to turn Zorkin into a business.
 
 ## MVP Video
 
