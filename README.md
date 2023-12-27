@@ -3,6 +3,8 @@
   <img src="./Logo.png" alt="Logo" style="max-height:200px;">
 </p>
 
+Zorkin covers a range of low-friction authentication methods to access self-custodial blockchain accounts, mostly leveraging ZK-SNARKs. This document covers using OpenIDConnect, and the [Magic Email](./MagicEmail.md) document covers how to leverage the DKIM protocol of email to create a ZK equivalent to the popular magic link authentication method to access a self-custodial wallet tied to a users email. All rights reserved, with copyright, the works of Zorkin make several novel contributions. There is an intent to turn Zorkin into a business.
+
 ## Introduction
 
 This document outlines a method for users to create application-specific wallets for holding assets related to that application (e.g. a game wallet), accessible via [OpenIdConnect](https://openid.net/developers/how-connect-works/) (OIDC) authentication with OAuth providers such as Facebook, X, and Google. The system enables users to maintain self-custody of their assets while ensuring privacy of their OAuth accounts. Key differentiators from existing solutions ([ZK-Login](https://sui.io/zklogin), [snark-jwt-verify](https://github.com/TheFrozenFire/snark-jwt-verify), [zkOauth](https://github.com/0xrishabh/zkOauth)) include eliminating the need for a dedicated [salting service](https://www.thesslstore.com/blog/difference-encryption-hashing-salting), seamless OAuth client migration, deferring resource-intensive ZK-SNARK proof generation, allowing authorization session parameters to be defined in any [JSON Web Token](https://jwt.io) (JWT) claim for better compatibility with various OAuth providers, and the ability to remotely revoke authorized sessions for security purposes.
