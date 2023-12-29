@@ -204,7 +204,7 @@ def SessionAccount(sig):
 
 #### SessionAccount Reproduction
 
-We can reproduce the Logic Signature for a SessionAccount and its authorizing SessionAccount using only a known `TenantAuthAppId` and the OAuth account identifier `OAuthAccountGUID`, which can be computed from the JWT as the Poseidon hash of `JWT.iss` & `JWT.sub` fields. An Indexer is used to reproduce the authorizing LSIG, whereas the base `SessionAccount` can be reproduced directly as explained in the pseudocode below. It is trivial to use another means of SessionAccount reproduction, for example storing the template values in the box storage of `TenantAuth`.
+We can reproduce the LSIG for a SessionAccount and its authorizing SessionAccount using only a known `TenantAuthAppId` and `OAuthAccountGUID`. The base `SessionAccount` is reproducible by assigning default values to the session parameters, the ephemeral public key and its expiration, and the known `TenantAuthAppId` and `OAuthAccountGUID` values for the respective template variables in the known `SessionAccount` program code. To reproduce the authorizing `SessionAccount` LSIG, a custom [Conduit](https://developer.algorand.org/docs/get-details/conduit/) Indexer (CustomIndexer) is used to identify the previous Session authorizing rekey transaction by querying the most recent transaction with a `rekeyTo` field that matches the current authorizing address. Once identified, the current session parameters can be read from the transaction and used to reproduce the authorizing `SessionAccount` LSIG. 
 
 ```python
 defaultEphemeralKey = Bytes(16, "CAFEFACE")
@@ -226,7 +226,7 @@ def GetAuthorizingAccount(
   # Get the last transaction from the authorizing address
   baseAccount = GetBaseAccount(OAuthAccountGUID, TenantAuthAppId)
   authorizingAddress = baseAccount['auth-addr']
-  lastAuthTxn = Indexer.GetLastTxn(authorizingAddress)
+  lastAuthTxn = CustomIndexer.GetLastTxnWithRekeyTo(authorizingAddress)
   if lastAuthTxn == None:
     return GetBaseAccount(OAuthAccountGUID, TenantAuthAppId)
   # Get the template variables from the last transaction
