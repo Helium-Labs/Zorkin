@@ -204,7 +204,7 @@ def SessionAccount(sig):
 
 ### Reproduction of a SessionAccount
 
-Since a SessionAccount is a Logic Signature, we need a way to reproduce its program code using the appropriate template variables. We explain how in the following, which shows how to reproduce both a base SessionAccount and its authorizing SessionAccount using an Indexer of blockchain state, `TenantAuthAppId` and the input `userEmailAddressHash`.
+We can reproduce the LSIG for a SessionAccount and its authorizing SessionAccount using only a known `TenantAuthAppId` and `userEmailAddressHash`. The base `SessionAccount` is reproducible by assigning default values to the session parameters, the ephemeral public key and its expiration, and the known `TenantAuthAppId` and `userEmailAddressHash` values for the respective template variables in the known `SessionAccount` program code. To reproduce the authorizing `SessionAccount` LSIG, a custom [Conduit](https://developer.algorand.org/docs/get-details/conduit/) Indexer (CustomIndexer) is used to identify the previous Session authorizing rekey transaction by querying the most recent transaction with a `rekeyTo` field that matches the current authorizing address. Once identified, the current session parameters can be read from the transaction and used to reproduce the authorizing `SessionAccount` LSIG. 
 
 ```python
 defaultEphemeralKey = Bytes(16, "CAFEFACE")
@@ -225,7 +225,7 @@ def GetAuthorizingAccount(
   # Get the last transaction of the authorizing address
   baseAccount = GetBaseAccount(userEmailAddressHash, TenantAuthAppId)
   authorizingAddress = baseAccount['auth-addr']
-  lastAuthTxn = Indexer.GetLastTxn(authorizingAddress)
+  lastAuthTxn = CustomIndexer.GetLastTxnWithRekeyTo(authorizingAddress)
   if lastAuthTxn == None:
     return GetBaseAccount(userEmailAddressHash, TenantAuthAppId)
   # Get the template variables from the last transaction
