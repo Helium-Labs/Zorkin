@@ -285,7 +285,7 @@ To authorize a new session, the user identified by `OAuthAccountGUID` must first
 
 By the atomic nature of the transaction, authorization is broken into distinct components that are orchestrated by `TenantAuth` which oversees that the proof is valid, that `OAuthClientEntry` is a supported OAuth client, and that the RSA public key is authentic to the issuer. The current authorizing SessionAccount will check that the transaction Id has been signed with the ephemeral private key `esk`, to prevent malicious authorization through replay of the inputs. This is because we can assume no one else has the private key, and that the transaction Id is unique.
 
-![CredentialCreation](./images/AuthorizingASession.png)
+![CredentialCreation](./images/AuthorizingSession.png)
 
 ##### Sequence Diagram of the SessionAccount authorization
 
