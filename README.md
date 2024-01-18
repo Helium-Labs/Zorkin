@@ -392,11 +392,11 @@ Instead of reproducing a SessionAccount and its authorizing SessionAccount using
 
 ### Enhanced Security with Dual-Factor Signature Verification
 
-To safeguard against unauthorized access through malicious frontends, a security enhancement is proposed. This involves dual-factor authentication for signing requests, applicable to all transactions except for Opt-In. The improvement introduces a 'WebKey', created client-side on a separate, secure website ('ZorkinWeb'). This WebKey, along with the ephemeral key, are required for transaction signing.
+To safeguard against unauthorized access through a malicious frontend, a security enhancement is proposed. This involves dual-factor authentication for signing requests, applicable to all transactions except for Opt-In. The improvement introduces a `WebKey`, created client-side on a separate, secure website (`ZorkinWeb`). This WebKey, along with the ephemeral key, are required for transaction signing.
 
-During a transaction, users are prompted via 'ZorkinWeb' to approve requests, requiring signatures from both the ephemeral key and the WebKey. To ensure the WebKey's authenticity, the 'TenantAuth' application verifies that it's signed with the 'SessionApprovalKey', controlled by Zorkin and stored in the 'ZorkinAuth' application. Transactions without this verification are denied.
+Users are prompted via `ZorkinWeb` to approve signing requests, where a signature of the transaction made with the WebKey is included as an argument to the SessionAccount LSIG. The approval logic of the LSIG requires the transaction is signed with both the bound ephemeral key and WebKey. To ensure the WebKey's authenticity, the `TenantAuth` application verifies that it's signed with the `SessionApprovalKey` during session creation, with the key controlled by Zorkin and stored in the `ZorkinAuth` application.
 
-'ZorkinWeb' offers a user experience akin to the [Pera Web wallet](https://github.com/perawallet/pera-web-wallet), with streamlined login via OIDC. This approach maintains self-custody, as Zorkin never holds both keys. It effectively shields users from malicious sites, as transactions require explicit user approval through 'ZorkinWeb', thus enhancing security.
+`ZorkinWeb` offers a user experience akin to the [Pera Web wallet](https://github.com/perawallet/pera-web-wallet), with streamlined login via OIDC. This approach maintains self-custody, as Zorkin never holds both keys. It effectively shields users from malicious sites, as transactions require explicit user approval through `ZorkinWeb`, thus enhancing security.
 
 ### Email Recovery
 
