@@ -370,7 +370,7 @@ These improvements focus on enhancing security, reducing costs, and offering a m
 
 ## Improvements
 
-For simplicity and clarity of explanation, certain mechanisms were excluded. These represent small improvements in security and privacy preservation, and are explained below.
+For simplicity and clarity of explanation, certain mechanisms were excluded and are explained below. These improvements will most likely find their way into the final submission.
 
 ### Restricting Rekey to Session Accounts owned by the user
 
@@ -389,6 +389,34 @@ RSA verification could in theory be offloaded to the blockchain, instead of doin
 ### Indexer-free alternative
 
 Instead of reproducing a SessionAccount and its authorizing SessionAccount using an indexer as explained, an alternative is to simply store the session parameters `epk` and `exp` in the box storage of the `TenantAuth` application to which the account is associated, every time a user authorizes a new SessionAccount when proving corresponding OAuth account access. This isn't necessarily better, as it has minimum-balance requirement cost associated with box storage which is redeemable on clearing of the box storage. An Indexer is assumed to be an indexer of all blockchain state, and allowing for fairly efficient queries of the B-Tree SQL stored data.
+
+### Enhanced Security with Dual-Factor Signature Verification
+
+To safeguard against unauthorized access through malicious frontends, a security enhancement is proposed. This involves dual-factor authentication for signing requests, applicable to all transactions except for Opt-In. The improvement introduces a 'WebKey', created client-side on a separate, secure website ('ZorkinWeb'). This WebKey, along with the ephemeral key, are required for transaction signing.
+
+During a transaction, users are prompted via 'ZorkinWeb' to approve requests, requiring signatures from both the ephemeral key and the WebKey. To ensure the WebKey's authenticity, the 'TenantAuth' application verifies that it's signed with the 'SessionApprovalKey', controlled by Zorkin and stored in the 'ZorkinAuth' application. Transactions without this verification are denied.
+
+'ZorkinWeb' offers a user experience akin to the [Pera Web wallet](https://github.com/perawallet/pera-web-wallet), with streamlined login via OIDC. This approach maintains self-custody, as Zorkin never holds both keys. It effectively shields users from malicious sites, as transactions require explicit user approval through 'ZorkinWeb', thus enhancing security.
+
+### Email Recovery
+
+Upon signing up, users receive a Welcome Email at their specified `UserEmailAddress`, linked to their SessionAccount. This email confirms their account details and provides validation instructions. For account recovery, users are required to prove that they have sent an email from `UserEmailAddress` to Zorkin with the subject "Recover A to B," where `A` represents their existing SessionAccount address and `B` is the new address. This proof, referred to as `RecoveryProof`, is a ZK-SNARK proof that utilizes the DKIM protocol. DKIM employs RSA keys from email providers to authenticate emails and prevent spoofing.
+
+To manage the regular updates of `DKIMKey` (the email provider's RSA key), we maintain a `DKIMRegistry`. Updated through HTTPS DNS queries via `ChainLink` (akin to `RSAVerifier`), this registry stores the RSA keys. For recovery purposes, we validate both the `RecoveryProof` and `DKIMKey` through on-chain ZK-SNARK verification and `DKIMRegistry` checks.
+
+This method enables Zorkin users to recover their accounts without needing continuous access to OAuth clients, thereby maintaining self-custody since only they can initiate this recovery via their email. [ZK-Email](https://github.com/zkemail) offers several open-source repositories that facilitate the easy and safe creation of ZK-SNARK email proofs.
+
+### Enhanced Permissions and Composability with ARC-56
+
+[ARC-56](https://github.com/algorandfoundation/ARCs/pull/269) introduces a standard for the flash rekey concept, allowing applications, or plugins, to control a contract account temporarily. This is done by rekeying within a transaction and reverting back to the original application before the transaction ends. The admin account, responsible for ARC-56 applications, has the authority to add plugins, a process requiring careful admin review due to the permissions it grants.
+
+ARC-56 stands out for its composability. It enables minting a new asset and having an application opt-in to receive it in one atomic transaction, a function not possible with basic LSIG. This is particularly useful for sectors like NFT Marketplaces and gaming.
+
+Zorkin is introducing a variant where the Admin account becomes the user's `SessionAccount`, clearly separating session management from ARC-56 application control. Users must explicitly approve new plugins through `ZorkinWeb`, inheriting the composability and permissions model of ARC-56.
+
+### Seamless Opt-In
+
+Two methods for Seamless Opt-In will be introduced. The first is the [Opt-In plugin with ARC-56](https://github.com/joe-p/account_abstraction/tree/main). The second adjusts the SessionAccount to enable asset Opt-Ins, requiring coverage of the Minimum Balance Requirement (MBR) in a non-redeemable manner within the Logic Signature's (LSIG) approval logic. The LSIG method has lower composability than the Opt-In plugin; for example, it doesn't support minting an asset and sending it to the LSIG within the same atomic transaction due to limitations in the asset's definition outside the main transaction group.
 
 ## Security Proof
 
@@ -411,13 +439,15 @@ Claim: No one except people with access to the OAuth account identified by OAuth
 
 The only way to create an ephemeral key is through proving access to the OAuth account identified by `OAuthAccountGUID`, where the sender can specify the ephemeral key. The smart contract design requires proof of account access, which requires proving access with a valid JWT, with the ephemeral public key proven to be included in a customizable claim (`CustomClaim`). The JWT signature authenticity is checked against the cache of valid JWKs as recorded at the respective issuers JWK endpoint with `RSAVerifier`, proving authencity. The proof payload and inputs cannot be replayed to engage in a replay attack, because `SessionAccount` requires the rekey transaction Id be signed with the ephemeral private key. Therefore no one but the user with access to the OAuth account can access the `SessionAccount` which is tied to `OAuthAccountGUID`.
 
+## Prover Deployment
+
+The Prover, demanding significant computing resources, takes about 8 seconds to generate on a modern 16-core machine with 16GB RAM. For proof generation, Zorkin provers are deployed on Google Kubernetes Engine (GKE), utilizing Google Compute Engine's [Tau T2D VMs](https://cloud.google.com/blog/products/compute/compute-engine-tau-t2d-vms-now-available-for-scale-out-workloads) with AMD's 3rd generation Epyc Processors. To optimize costs, [Spot VMs](https://cloud.google.com/spot-vms) are used, suitable for the workload's interruptible and stateless nature. GKE facilitates on-demand compute; the circuit and prover, containerized using the efficient [RapidSnark](https://github.com/iden3/rapidsnark) prover, scale dynamically based on user demand. Additionally, Google Cloud's Image Streaming, compatible with ContainerD hosted images, allows for near-instantaneous streaming of container images to GKE nodes. Despite the reasonably intensive compute, the cost is still competitive with other Web3 Auth providers as estimated by [Google Cloud's Pricing Calculator](https://cloud.google.com/products/calculator).
+
 ## Future Work
 
 The following details future work that we intend to engage in for the continued development of Zorkin.
 
-1. Refine the Zero-Knowledge Email (ZK-Email) recovery process.
-2. Introduce the refinements explained in the above improvements section.
-3. Research & Develop means of reducing friction in [Opt-In](https://developer.algorand.org/docs/get-details/asa/) & fee management with `SessionAccount` compatibility.
+1. Introduce the refinements explained in the above improvements section.
 
 ## Contribution Statement
 
