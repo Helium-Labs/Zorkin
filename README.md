@@ -3,9 +3,20 @@
   <img src="./Logo.png" alt="Logo" style="max-height:200px;">
 </p>
 
-Zorkin covers a range of low-friction authentication methods to access self-custodial blockchain accounts, mostly leveraging ZK-SNARKs. This document covers using OpenIDConnect, and the [Magic Email](./MagicEmail.md) document covers how to leverage the DKIM protocol of email to create a ZK equivalent to the popular magic link authentication method to access a self-custodial wallet tied to a users email. **All rights reserved, with copyright, the works of Zorkin make several novel contributions with the Intellectual Property owned by Zorkin and its affiliates (Winton Nathan-Roberts).** There is an intent to turn Zorkin into a business.
+Zorkin covers a range of low-friction authentication methods to access self-custodial blockchain accounts, mostly leveraging ZK-SNARKs. This document covers using OpenIDConnect, and the [Magic Email](./MagicEmail.md) document covers how to leverage the DKIM protocol of email to create a ZK equivalent to the popular magic link authentication method to access a self-custodial wallet tied to a users email. 
 
-**No warranties or liabilities to the fullest extent permitted by law, everything is in development and therefore subject to change. Use at your own risk. _This is a work in progress!!!_**
+
+**About this document:**
+- The project is independent and not linked to any other projects or organizations. It's best to consider it in isolation. Initially, the system will be tested on a blockchain testnet, and further actions will be determined based on these tests.
+- Even after significant refinement and successful operation on the testnet, it's possible that the project may not be feasible for further development.
+- The development is being done openly, specifically to prevent the patenting of the methods being developed. Public disclosure is a key aspect of this strategy.
+- This document is not a cryptocurrency asset whitepaper.
+- This is not an attempt to sell anything or an advertisement of any kind.
+- Currently, the service discussed in this document is not available to the public and it might never be released.
+- It's important to read the disclaimers at the end of the document.
+- The document is a 'living' one, meaning it will undergo significant changes as the method is refined, which is a normal part of research and development.
+
+No warranties or liabilities to the fullest extent permitted by law, everything is in development and therefore subject to change. Use at your own risk. This is a work in progress! All rights reserved, with copyright, the works of Zorkin make several novel contributions with the Intellectual Property owned by Zorkin and its affiliates (Winton Nathan-Roberts). There is an intent to turn commercialize Zorkin in some form, which may not be realised.
 
 ## MVP Video
 
