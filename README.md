@@ -456,6 +456,15 @@ The only way to create an ephemeral key is through proving access to the OAuth a
 
 The Prover, demanding significant computing resources, takes about 8 seconds to generate on a modern 16-core machine with 16GB RAM. For proof generation, Zorkin provers are deployed on Google Kubernetes Engine (GKE), utilizing Google Compute Engine's [Tau T2D VMs](https://cloud.google.com/blog/products/compute/compute-engine-tau-t2d-vms-now-available-for-scale-out-workloads) with AMD's 3rd generation Epyc Processors. To optimize costs, [Spot VMs](https://cloud.google.com/spot-vms) are used, suitable for the workload's interruptible and stateless nature. GKE facilitates on-demand compute; the circuit and prover, containerized using the efficient [RapidSnark](https://github.com/iden3/rapidsnark) prover, scale dynamically based on user demand. Additionally, Google Cloud's Image Streaming, compatible with ContainerD hosted images, allows for near-instantaneous streaming of container images to GKE nodes. Despite the reasonably intensive compute, the cost is still competitive with other Web3 Auth providers as estimated by [Google Cloud's Pricing Calculator](https://cloud.google.com/products/calculator).
 
+## On-Chain RSA Innovation
+
+A straightforward innovation is to perform RSA verification on-chain rather than relying on the circuit to do so. The benefit of this approach is that it reduces circuit complexity, which in turn lowers prover costs and improves the circuit's reliability. Specifically, the contract account verifies the proof as usual, except:
+
+- The hash of the head and body of the JWT is supplied to the contract account, denoted as `H(head.body)`.
+- On-chain, RSA verification occurs where the signature of `H(head.body)` from the JWT is verified against the public modulus.
+- The circuit compares `H(head.body)` to the private input `JWT`, with `H(head.body)` as a public input, proving that the JWT was signed by the modulus without performing RSA within the circuit.
+- The presence of the `nonce` within `CustomClaimValue` ensures that `H(head.body)` is a salted hash, which has an anonymizing effect on the JWT. As a result, without the unhashed pre-image (`head.body`), the signature and hash are unusable for any form of authentication, even though these values are on a public blockchain.
+
 ## Future Work
 
 The following details future work that we intend to engage in for the continued development of Zorkin.
