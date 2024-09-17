@@ -465,6 +465,14 @@ A straightforward innovation is to perform RSA verification on-chain rather than
 - The circuit compares `H(head.body)` to the private input `JWT`, with `H(head.body)` as a public input, proving that the JWT was signed by the modulus without performing RSA within the circuit.
 - The presence of the nonce like ephemeral public key within `CustomClaimValue` ensures that `H(head.body)` is a salted hash, which has an anonymizing effect on the JWT. As a result, without the unhashed pre-image (`head.body`), the signature and hash are unusable for any form of authentication, even though these values are on a public blockchain.
 
+## Preventing Malicious Clients: Dual OIDC Authentication Innovation
+
+To prevent clients using Zorkin from signing malicious transactions without user consent, each transaction must be signed by a private key stored at a Zorkin-controlled website origin (`ZORKIN_WEB`) after the user approves it via a signing modal popup. This key is generated in the frontend client at the origin `ZORKIN_WEB`.
+
+To prevent a client from faking user approval, the public key component is sent to Zorkin's backend along with a JWT access token that is issued specifically for `ZORKIN_WEB`, using the same account as that used to sign in to the client. This access token is isolated from the client; however, it has the same issuer and subject fields that tie it to the same user, allowing us to prove that the user consented to the transaction and that the public key is associated with the authorization session. Without this approach, a client could potentially fake a signing request, as there would be nothing to link `ZORKIN_WEB` to a particular authorization request without introducing a second access token that is exclusive to `ZORKIN_WEB` for the same user.
+
+Although this adds slightly more friction to the authentication flow, the use of refresh tokens means that a second sign-in to generate the access token for `ZORKIN_WEB` is rarely needed.
+
 ## Future Work
 
 The following details future work that we intend to engage in for the continued development of Zorkin.
