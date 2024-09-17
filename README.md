@@ -481,7 +481,7 @@ The following details future work that we intend to engage in for the continued 
 
 ## Contribution Statement
 
-Authored by Winton Nathan-Roberts of Sydney, Australia, this document details original work distinct from existing literature to the best of my knowledge. Novel contributions include its approach in implementing OAuth2 self-custodial access by recursively regenerating and rekeying SessionAccount LSIGs, the elimination of a salting service, proof generation deferral, decentralized recovery options, reduction in gas fees associated with constant proof verification, revocation of active sessions and the independence of a users SessionAccount from a particular OAuth client through the concept of a tenant. Thanks to the Algorand community for their support.
+Authored by Winton Nathan-Roberts of Sydney, Australia, this document details original work distinct from existing literature to the best of my knowledge. Novel contributions include its approach in implementing OAuth2 self-custodial access by recursively regenerating and rekeying SessionAccount LSIGs, the elimination of a salting service, proof generation deferral, decentralized recovery options, reduction in gas fees associated with constant proof verification, revocation of active sessions and the independence of a users SessionAccount from a particular OAuth client through the concept of a tenant. Other innovations include the sections titled "On-Chain RSA Innovation" and "Preventing Malicious Clients: Dual OIDC Authentication Innovation" above. Thanks to the Algorand community for their support.
 \
 \
 All Rights Reserved with Copyright.
