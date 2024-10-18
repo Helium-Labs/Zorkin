@@ -479,7 +479,7 @@ Although this adds slightly more friction to the authentication flow, the use of
 Note: the following is understood to be not infringing with any patents, pending or otherwise. This has been validated by myself, and a 3rd party.
 
 
-FIDO2 can be utilized for contract account (SessionAccount) recovery by associating a FIDO2 credential with the account during the sign-up process and using that credential as the authentication factor for recovery. This functionality is managed by the TenantAuth application, which maintains a sequence number for each contract account, initially set to zero, and the public key of the FIDO2 credential used for recovery.
+[FIDO2](https://fidoalliance.org/fido2/) can be utilized for contract account (SessionAccount) recovery by associating a FIDO2 credential with the account during the sign-up process and using that credential as the authentication factor for recovery. This functionality is managed by the TenantAuth application, which maintains a sequence number for each contract account, initially set to zero, and the public key of the FIDO2 credential used for recovery.
 
 During sign-up, a FIDO2 credential is linked to the contract account as the recovery factor by providing a signature of the current sequence number generated with the credential. The public key of this credential is then stored in TenantAuth's state, mapped to the address of the corresponding contract account.
 
