@@ -476,7 +476,10 @@ Although this adds slightly more friction to the authentication flow, the use of
 
 ## Innovation: FIDO2 for Account Recovery
 
+
 Note: the following is understood to be not infringing with any patents, pending or otherwise. This has been validated by myself, and a 3rd party.
+\
+![FIDO2 Protocols](https://www.mobbeel.com/wp-content/uploads/2022/04/protocolos-FIDO2-1.png)
 
 
 [FIDO2](https://fidoalliance.org/fido2/) can be utilized for contract account (`SessionAccount`) recovery by associating a FIDO2 credential with the account during the sign-up process and using that credential as the authentication factor for recovery. This functionality is managed by the `TenantAuth` application, which maintains a sequence number for each contract account, initially set to zero, and the public key of the FIDO2 credential used for recovery.
