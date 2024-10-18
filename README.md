@@ -479,40 +479,40 @@ Although this adds slightly more friction to the authentication flow, the use of
 Note: the following is understood to be not infringing with any patents, pending or otherwise. This has been validated by myself, and a 3rd party.
 
 
-[FIDO2](https://fidoalliance.org/fido2/) can be utilized for contract account (SessionAccount) recovery by associating a FIDO2 credential with the account during the sign-up process and using that credential as the authentication factor for recovery. This functionality is managed by the TenantAuth application, which maintains a sequence number for each contract account, initially set to zero, and the public key of the FIDO2 credential used for recovery.
+[FIDO2](https://fidoalliance.org/fido2/) can be utilized for contract account (`SessionAccount`) recovery by associating a FIDO2 credential with the account during the sign-up process and using that credential as the authentication factor for recovery. This functionality is managed by the `TenantAuth` application, which maintains a sequence number for each contract account, initially set to zero, and the public key of the FIDO2 credential used for recovery.
 
-During sign-up, a FIDO2 credential is linked to the contract account as the recovery factor by providing a signature of the current sequence number generated with the credential. The public key of this credential is then stored in TenantAuth's state, mapped to the address of the corresponding contract account.
+During sign-up, a FIDO2 credential is linked to the contract account as the recovery factor by providing a signature of the current sequence number generated with the credential. The public key of this credential is then stored in `TenantAuth`'s state, mapped to the address of the corresponding contract account.
 
-To recover an account, a group transaction is created that includes an application call to TenantAuth's recovery function and a rekey transaction from the contract account. This rekey transaction is signed with the LSIG (Local Signature) and specifies a new user-managed key to which the account will be rekeyed. The LSIG logic verifies that the group transaction contains a call to the TenantAuth recovery function. Concurrently, the TenantAuth recovery function ensures that a valid signature of the current sequence number, created with the associated FIDO2 credential, is provided. This signature must match the FIDO2 credential public key stored for the contract account being recovered, and involves parsing the FIDO2 JSON challenge on-chain to ensure it contains a payload with the sequence number. Since its a group transaction, failure of the recovery function will cause failure of the entire group transaction.
+To recover an account, a group transaction is created that includes an application call to `TenantAuth`'s recovery function and a rekey transaction from the contract account. This rekey transaction is signed with the LSIG (Local Signature) and specifies a new user-managed key to which the account will be rekeyed. The LSIG logic verifies that the group transaction contains a call to the `TenantAuth` recovery function. Concurrently, the `TenantAuth` recovery function ensures that a valid signature of the current sequence number, created with the associated FIDO2 credential, is provided. This signature must match the FIDO2 credential public key stored for the contract account being recovered, and involves parsing the FIDO2 JSON challenge on-chain to ensure it contains a payload with the sequence number. Since its a group transaction, failure of the recovery function will cause failure of the entire group transaction.
 
 
 To prevent replay attacks, each verification increments the sequence number, rendering any previously used signatures invalid. This mechanism ensures that old signatures cannot be reused, thereby maintaining the security and integrity of the account recovery process.
 
 ### Components
 
-1. **SessionAccount (Contract Account Representation):**  
+1. **`SessionAccount` (Contract Account Representation):**  
    User accounts are represented as LSIG (Logic Signature) contract accounts. While authentication during regular account usage is handled by other means, FIDO2 is used specifically for recovery purposes when regular credentials are lost.
 
-2. **TenantAuth Application:**  
-   A stateful Algorand Smart Contract (ASC1) called TenantAuth is responsible for managing the sequence number (initially set to zero) and storing the public key of the associated FIDO2 credential used for account recovery. TenantAuth ensures the security and proper execution of the recovery mechanism.
+2. **`TenantAuth` Application:**  
+   A stateful Algorand Smart Contract (ASC1) called `TenantAuth` is responsible for managing the sequence number (initially set to zero) and storing the public key of the associated FIDO2 credential used for account recovery. `TenantAuth` ensures the security and proper execution of the recovery mechanism.
 
 3. **FIDO2 Credential Association During Sign-Up:**  
-   At the time of contract account registration, a FIDO2 authenticator device is associated with the account. This FIDO2 public key is stored in TenantAuth’s state and serves as the recovery credential in the event of lost access to the account's main credentials.
+   At the time of contract account registration, a FIDO2 authenticator device is associated with the account. This FIDO2 public key is stored in `TenantAuth`’s state and serves as the recovery credential in the event of lost access to the account's main credentials.
 
 4. **Sequence Number and Signature Verification:**  
    The account recovery process involves signing the current sequence number using the associated FIDO2 credential. Each successful recovery increments the sequence number, ensuring that previously used signatures are invalidated to prevent replay attacks.
 
 5. **FIDO2 Challenge Parsing:**  
-   The WebAuthn challenge (FIDO2 JSON data) is parsed on-chain within the TenantAuth application to verify the signature, ensuring that the challenge payload includes the current sequence number. This validation guarantees the authenticity of the FIDO2 response during the recovery process.
+   The WebAuthn challenge (FIDO2 JSON data) is parsed on-chain within the `TenantAuth` application to verify the signature, ensuring that the challenge payload includes the current sequence number. This validation guarantees the authenticity of the FIDO2 response during the recovery process.
 
 6. **Account Recovery Process:**  
-   To recover a contract account, a group transaction is created. This transaction includes a call to TenantAuth's recovery function, along with a rekey transaction signed by the LSIG. The LSIG checks that the recovery function is included in the group transaction, while TenantAuth ensures that the FIDO2 signature provided is valid by comparing it with the stored public key and matching it to the current sequence number. Upon successful recovery, the account is rekeyed to a new user-managed key.
+   To recover a contract account, a group transaction is created. This transaction includes a call to `TenantAuth`'s recovery function, along with a rekey transaction signed by the LSIG. The LSIG checks that the recovery function is included in the group transaction, while `TenantAuth` ensures that the FIDO2 signature provided is valid by comparing it with the stored public key and matching it to the current sequence number. Upon successful recovery, the account is rekeyed to a new user-managed key.
 
 These components together form a secure mechanism for using FIDO2 in the context of contract account recovery, leveraging Algorand’s smart contract functionality to ensure integrity and safety in the recovery process.
 
 ### Extension: FIDO2 as an authentication factor
 
-Referring to Zorkin, we can use the same FIDO2 recovery mechanism described above to authorize a session key to transact from the contract account (SessionAccount) as an alternative to using OIDC. The mechanism is essentially the same, except that recovery is modified to become the process of authorizing the ephemeral session key's authority to spend from the account once a signature of the sequence number is provided with the linked FIDO2 credential public key. This is done by rekeying it to a new instance of the session account with the session public key as the new value for the session public key template variable.
+Referring to Zorkin, we can use the same FIDO2 recovery mechanism described above to authorize a session key to transact from the contract account (`SessionAccount`) as an alternative to using OIDC. The mechanism is essentially the same, except that recovery is modified to become the process of authorizing the ephemeral session key's authority to spend from the account once a signature of the sequence number is provided with the linked FIDO2 credential public key. This is done by rekeying it to a new instance of the session account with the session public key as the new value for the session public key template variable.
 
 ## Future Work
 
