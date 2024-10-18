@@ -477,7 +477,8 @@ Although this adds slightly more friction to the authentication flow, the use of
 ## Innovation: FIDO2 for Account Recovery
 
 
-Note: the following is believed to not infringing with any patents, pending or otherwise. This has been validated by myself, and a 3rd party. We are not lawyers, and that isn't legal advice. It may be an incorrect assessment.
+Note: The following is believed not to infringe on any patents, pending or otherwise. This assessment has been validated by both myself and a third party. However, we are not lawyers, and this is not legal advice. Our assessment may be incorrect.
+
 \
 ![FIDO2 Protocols](https://www.mobbeel.com/wp-content/uploads/2022/04/protocolos-FIDO2-1.png)
 
