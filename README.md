@@ -419,17 +419,17 @@ To manage the regular updates of `DKIMKey` (the email provider's RSA key), we ma
 
 This method enables Zorkin users to recover their accounts without needing continuous access to OAuth clients, thereby maintaining self-custody since only they can initiate this recovery via their email. [ZK-Email](https://github.com/zkemail) offers several open-source repositories that facilitate the easy and safe creation of ZK-SNARK email proofs.
 
-### Enhanced Permissions and Composability with ARC-56
+### Enhanced Permissions and Composability with ARC-58
 
-[ARC-56](https://github.com/algorandfoundation/ARCs/pull/269) introduces a standard for the flash rekey concept, allowing applications, or plugins, to control a contract account temporarily. This is done by rekeying within a transaction and reverting back to the original application before the transaction ends. The admin account, responsible for ARC-56 applications, has the authority to add plugins, a process requiring careful admin review due to the permissions it grants.
+[ARC-58](https://github.com/algorandfoundation/ARCs/pull/269) introduces a standard for the flash rekey concept, allowing applications, or plugins, to control a contract account temporarily. This is done by rekeying within a transaction and reverting back to the original application before the transaction ends. The admin account, responsible for ARC-58 applications, has the authority to add plugins, a process requiring careful admin review due to the permissions it grants.
 
-ARC-56 stands out for its composability. It enables minting a new asset and having an application opt-in to receive it in one atomic transaction, a function not possible with basic LSIG. This is particularly useful for sectors like NFT Marketplaces and gaming.
+ARC-58 stands out for its composability. It enables minting a new asset and having an application opt-in to receive it in one atomic transaction, a function not possible with basic LSIG. This is particularly useful for sectors like NFT Marketplaces and gaming.
 
-Zorkin is introducing a variant where the Admin account becomes the user's `SessionAccount`, clearly separating session management from ARC-56 application control. Users must explicitly approve new plugins through `ZorkinWeb`, inheriting the composability and permissions model of ARC-56.
+Zorkin is introducing a variant where the Admin account becomes the user's `SessionAccount`, clearly separating session management from ARC-58 application control. Users must explicitly approve new plugins through `ZorkinWeb`, inheriting the composability and permissions model of ARC-58.
 
 ### Seamless Opt-In
 
-Two methods for Seamless Opt-In will be introduced. The first is the [Opt-In plugin with ARC-56](https://github.com/joe-p/account_abstraction/tree/main). The second adjusts the SessionAccount to enable asset Opt-Ins, requiring coverage of the Minimum Balance Requirement (MBR) in a non-redeemable manner within the Logic Signature's (LSIG) approval logic. The LSIG method has lower composability than the Opt-In plugin; for example, it doesn't support minting an asset and sending it to the LSIG within the same atomic transaction due to limitations in the asset's definition outside the main transaction group.
+Two methods for Seamless Opt-In will be introduced. The first is the [Opt-In plugin with ARC-58](https://github.com/joe-p/account_abstraction/tree/main). The second adjusts the SessionAccount to enable asset Opt-Ins, requiring coverage of the Minimum Balance Requirement (MBR) in a non-redeemable manner within the Logic Signature's (LSIG) approval logic. The LSIG method has lower composability than the Opt-In plugin; for example, it doesn't support minting an asset and sending it to the LSIG within the same atomic transaction due to limitations in the asset's definition outside the main transaction group.
 
 ## Security Proof
 
